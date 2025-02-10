@@ -1,0 +1,39 @@
+[package]
+name = "rustypundle"
+version = "0.1.0"
+edition = "2021"
+authors = ["Neoseiki <neoseiki.xyz>"]
+description = "A solana dope bundler."
+license = "MIT"
+repository = "https://github.com/Neoseiki/rustypundle"
+
+[dependencies]
+reqwest = { version = "0.11", features = ["json"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full", "macros"] }
+anyhow = "1.0"
+serde = "1.0.209"
+bincode = "1.3.3"
+bs58 = "0.4.0"
+rand = "0.8"
+jito-sdk-rust = "=0.1.0"
+solana-client = "1.16"
+solana-sdk = "1.16"
+anchor-client = "0.30.1"
+pumpfun = "3.0.1"
+anchor-spl = "0.30.1"
+borsh = "1.5.5"
+base64 = "0.21.0"
+jupiter-swap-api-client = "0.1.0"
+log = "0.4.21"
+tower-http = {version = "0.5.2", features = ["cors", "compression-full"]}
+tower = "0.4"
+axum = "0.7.5"
+axum-server = { version = "0.6.0", features = ["tls-rustls"] }
+dotenv = "0.15.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+base64 = "0.21.0"
+solana-client = "1.16"
+solana-sdk = "1.16"

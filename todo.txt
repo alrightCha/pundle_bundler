@@ -1,0 +1,37 @@
+For other backend service (the orchestrator)
+
+// Enable request only from specified ip address
+
+//have list of current requests in a queue first in first out 
+//Have a key value pair to store the request public key and the keypairs mapped to them, amount due, timestamp to pay, address to pay to
+//have a mutable value for ongoing bundle user ID to get the info from mapping 
+
+//Loop through the queue, 
+//check if the main wallet has enough balance to pay for bundle, pop from queue if true and bundle launch
+//Get from key value pair the info to check if paid / pending / expired
+
+
+
+Command to test send bundle: 
+
+
+curl -X POST localhost:443/post-bundle     -H "Content-Type: application/json"     -d '{
+ "requesterPubkey": "somePublicKey",
+ "name": "ExampleName",
+"symbol": "EXM",
+"description": "An example description of the bundle.",
+"image": "http://example.com/image.png",
+"websiteUrl": "http://example.com",
+ "telegramUrl": "http://telegram.com/example",
+  "twitterUrl": "http://twitter.com/example",
+"devBuyAmount": 3000000,
+ "walletsBuyAmount": [3000000, 3000000, 3000000]
+}'
+
+Resources:
+
+https://github.com/metaplex-foundation/lut/tree/main -> LOOKUP TABLES 
+https://github.com/jup-ag/jupiter-swap-api-client/blob/main/example/src/main.rs -> JUP API 
+https://github.com/jito-labs/jito-rust-rpc/blob/master/examples/basic_bundle.rs -> JITO RPC 
+https://docs.rs/pumpfun/latest/src/pumpfun/lib.rs.html -> PUMPFUN 
+https://github.com/enlomy/pumpfun-solana-smart-contract/tree/main -> PUMPFUN SOLANA SMART CONTRACT 
