@@ -9,7 +9,7 @@ use solana_sdk::instruction::Instruction;
 use solana_client::rpc_client::RpcClient;
 use anchor_client::Cluster;
 use solana_sdk::rent::Rent;
-use pumpfun::utils::CreateTokenMetadata;
+use crate::params::CreateTokenMetadata;
 use tokio::time::Duration;
 use std::collections::HashMap;
 
@@ -97,12 +97,8 @@ impl HandlerManager {
 
         let token_metadata : CreateTokenMetadata = CreateTokenMetadata {
             name: payload.name,
-            symbol: payload.symbol,
-            description: payload.description,
-            file: payload.image,
-            website: payload.website_url,
-            twitter: payload.twitter_url,
-            telegram: payload.telegram_url,
+            ticker: payload.symbol,
+            uri: payload.uri
         };
         
         let mut pumpfun_client = PumpFun::new(

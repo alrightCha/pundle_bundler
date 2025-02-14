@@ -7,11 +7,7 @@ pub struct PostBundleRequest {
     pub requester_pubkey: String,
     pub name: String, 
     pub symbol: String,
-    pub description: String,
-    pub image: String,
-    pub website_url: Option<String>,
-    pub telegram_url: Option<String>,
-    pub twitter_url: Option<String>,
+    pub uri: String,
     pub dev_buy_amount: u64,
     pub wallets_buy_amount: Vec<u64>,
 }
@@ -67,4 +63,11 @@ pub struct SellAllRequest {
     pub owner_pubkey: String,
     pub token_mint: String,
     pub slippage_bps: u16,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTokenMetadata {
+    pub name: String,
+    pub ticker: String,
+    pub uri: String,
 }

@@ -19,7 +19,7 @@ pub fn pack_instructions(
     lut: &AddressLookupTableAccount,
 ) -> Vec<PackedTransaction> {
     const MAX_ACCOUNTS_PER_TX: usize = 256;
-    const MAX_TX_SIZE: usize = 1232;
+    const MAX_TX_SIZE: usize = 1100; // 1232 is the max size of a transaction, but using less to be safe
     const BASE_TX_SIZE: usize = 64 + 3; // Signature (1 signer) + message header
 
     let lut_addresses: HashSet<Pubkey> = lut.addresses.iter().cloned().collect();

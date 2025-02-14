@@ -1,5 +1,4 @@
-use pumpfun::utils::CreateTokenMetadata;
-use pumpfun::utils::TokenMetadataResponse;
+use crate::params::CreateTokenMetadata;
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{
@@ -93,20 +92,14 @@ impl PumpFun {
         mint: &Keypair,
         metadata: CreateTokenMetadata,
     ) -> Result<Instruction, pumpfun::error::ClientError> {
-        // First upload metadata and image to IPFS
-        let ipfs:TokenMetadataResponse = pumpfun::utils::create_token_metadata(metadata)
-            .await
-            .map_err(pumpfun::error::ClientError::UploadMetadataError)?;
-        
-        println!("IPFS: {:?}", ipfs.metadata_uri);
         //Add to instruction the payer, and mint, add to signer the payer and mint as well !
         let create_ix: Instruction = pumpfun::instruction::create(
             &self.payer,
             mint,
             pumpfun::cpi::instruction::Create {
-                _name: ipfs.metadata.name,
-                _symbol: ipfs.metadata.symbol,
-                _uri: ipfs.metadata_uri,
+                _name: metadata.name,
+                _symbol: metadata.ticker,
+                _uri: metadata.uri,
             },
         );
 
@@ -184,7 +177,6 @@ impl PumpFun {
 
         Ok(instructions)
     }
-
 
        /// Sells tokens back to the bonding curve in exchange for SOL
     ///

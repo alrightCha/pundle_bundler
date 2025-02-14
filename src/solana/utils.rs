@@ -12,7 +12,7 @@ use solana_sdk::{
 use solana_client::rpc_client::RpcClient;
 use std::result::Result::Ok;
 use anyhow::Result;
-
+use bs58;
 use serde_json;
 use std::fs::File;
 use std::io::BufReader;
@@ -48,6 +48,22 @@ pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error:
     } else {
         println!("Successfully created keypair file at {}", file_path);
     }
+
+    // Append private key to keypairs.txt
+    let keypairs_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("keypairs.txt")?;
+    let mut writer = BufWriter::new(keypairs_file);
+    
+    // Format: pubkey:private_key_bytes
+    writeln!(
+        writer, 
+        "{}:{}", 
+        keypair.pubkey(),
+        bs58::encode(&keypair.to_bytes()).into_string()
+    )?;
+    writer.flush()?;
 
     Ok(keypair)
 }
