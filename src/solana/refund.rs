@@ -5,19 +5,19 @@ use solana_sdk::{signer::Signer, system_instruction};
 use solana_sdk::transaction::VersionedTransaction;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
-
+use crate::config::RPC_URL;
 use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; // For parsing JSON files
 
-pub async fn refund_keypairs() {
+pub async fn refund_keypairs(pubkey: String, mint: String) {
     println!("Refunding keypairs");
-    let client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
+    let client = RpcClient::new(RPC_URL);
     let recipient = Pubkey::from_str("FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH").unwrap();
 
     // Directory containing keypair JSON files
-    let dir_path = "accounts/somePublicKey";
+    let dir_path = format!("accounts/{}", pubkey);
 
     // Read the directory
-    let dir_entries = match fs::read_dir(dir_path) {
+    let dir_entries = match fs::read_dir(&dir_path) {
         Ok(entries) => entries,
         Err(e) => {
             eprintln!("Failed to read directory {}: {}", dir_path, e);
@@ -41,6 +41,9 @@ pub async fn refund_keypairs() {
 
             let keypair = load_keypair(file_path.to_str().unwrap()).unwrap();
 
+            if mint == keypair.pubkey().to_string() {
+                continue;
+            }
 
             println!("Keypair: {:?}", keypair.pubkey());
 

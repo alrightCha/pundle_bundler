@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-
+use solana_sdk::signature::Keypair;
 //Has requester public key, token metadata, dev buy amount and wallets buy amount
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,27 +48,12 @@ pub struct GetBundleWalletsResponse {
     pub keypairs: Vec<BundleWallet>,
 }
 
-
-#[derive(Deserialize)]
-pub struct WalletSell {
-    pub pubkey: String,
-    pub amount: f64
-}
-
 #[derive(Deserialize)]
 pub struct UniqueSellRequest {
-    pub owner_pubkey: String, 
-    pub token_mint: String,
-    pub wallet_sell: WalletSell,
-    pub slippage_bps: u16,
-}
-
-#[derive(Deserialize)]
-pub struct BulkSellRequest {
-    pub owner_pubkey: String,
-    pub token_mint: String, 
-    pub slippage_bps: Vec<u16>,
-    pub wallet_sells: Vec<WalletSell>,
+    pub pubkey: String, 
+    pub mint: String,
+    pub wallet: String,
+    pub amount: u64,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +61,12 @@ pub struct SellAllRequest {
     pub owner_pubkey: String,
     pub token_mint: String,
     pub slippage_bps: u16,
+    pub with_admin_transfer: bool,
+}
+
+#[derive(Serialize)]
+pub struct SellResponse {
+    pub success: bool,
 }
 
 #[derive(Deserialize)]
@@ -101,4 +92,11 @@ pub struct PoolInformation {
     pub is_bonding_curve_complete: bool,
     pub reserve_sol: u64,
     pub reserve_token: u64,
+}
+
+
+#[derive(Debug)]
+pub struct KeypairWithAmount {
+    pub keypair: Keypair,
+    pub amount: u64,
 }

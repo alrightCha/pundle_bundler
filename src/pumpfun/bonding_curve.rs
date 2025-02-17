@@ -1,5 +1,5 @@
 use pumpfun::error::ClientError;
-use super::consts::LAMPORTS_PER_SOL;
+use crate::config::LAMPORTS_PER_SOL;
 
 pub struct BondingCurve {
     pub tokens_bought: u64,

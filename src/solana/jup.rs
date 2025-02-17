@@ -8,13 +8,13 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::instruction::Instruction;
 
 
-pub async fn get_swap_instruction(pubkey: Pubkey, input_mint: Pubkey, slippage_bps: Option<u16>) -> Instruction {
+pub async fn get_swap_instruction(pubkey: Pubkey, input_mint: Pubkey, amount: u64, slippage_bps: Option<u16>) -> Instruction {
     let native_mint: Pubkey = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let jupiter_swap_api_client = JupiterSwapApiClient::new("https://quote-api.jup.ag/v6".to_string());
 
     //Quote resquest 
     let quote_request = QuoteRequest {
-        amount: 1_000_000,
+        amount: amount,
         input_mint: input_mint,
         output_mint: native_mint,
         slippage_bps: slippage_bps.unwrap_or(50),

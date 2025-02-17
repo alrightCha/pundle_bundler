@@ -1,4 +1,4 @@
-use crate::params::CreateTokenMetadata;
+use crate::{config::TOKEN_AMOUNT_MULTIPLIER, params::CreateTokenMetadata};
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{
@@ -237,6 +237,50 @@ impl PumpFun {
         Ok(instructions)
     }
 
+    //Sells all tokens in the keypair 
+    pub async fn sell_all_ix(
+        &self, 
+        mint: &Pubkey,
+        keypair: &Keypair, 
+    ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
+
+        let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint);
+        let balance = self.rpc.get_token_account_balance(&ata).await?;
+        let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
+        let global_account = self.get_global_account().await?;
+        let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
+        let min_sol_output = bonding_curve_account
+        .get_sell_price(balance_u64, global_account.fee_basis_points)
+        .map_err(pumpfun::error::ClientError::BondingCurveError)?;
+        let min_sol_output = pumpfun::utils::calculate_with_slippage_sell(
+            min_sol_output,
+            500,
+        );
+
+        let mut instructions: Vec<Instruction> = Vec::new();
+
+        // Set moderate priority fee to help transaction pass
+        let limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
+        instructions.push(limit_ix);
+
+        let price_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000); // 0.001 SOL per compute unit
+        instructions.push(price_ix);
+        
+        let sell_ix = instruction::sell(
+            &keypair, 
+            mint, 
+            &global_account.fee_recipient,
+            pumpfun::cpi::instruction::Sell {
+                _amount: balance_u64,
+                _min_sol_output: min_sol_output,
+            },
+        );
+
+        instructions.push(sell_ix);
+
+        Ok(instructions)
+    }
+
     /// Gets the global state account data containing program-wide configuration
     ///
     /// # Returns
@@ -314,7 +358,7 @@ impl PumpFun {
     pub async fn get_pool_information(&self, mint: &Pubkey) -> Result<PoolInformation, pumpfun::error::ClientError> {
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
         let current_mc = bonding_curve_account.get_market_cap_sol();
-        let sell_price = bonding_curve_account.get_sell_price(10000 * 1_000_000, 500).unwrap(); // price per 10k tokens
+        let sell_price = bonding_curve_account.get_sell_price(10000 * TOKEN_AMOUNT_MULTIPLIER, 500).unwrap(); // price per 10k tokens
         let is_bonding_curve_complete = bonding_curve_account.complete;
         let reserve_sol = bonding_curve_account.real_sol_reserves;
         let reserve_token = bonding_curve_account.real_token_reserves;

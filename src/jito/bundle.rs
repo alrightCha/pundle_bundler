@@ -1,34 +1,48 @@
 
-Command to test send bundle: 
+use std::{
+    sync::Arc,
+    collections::HashMap,
+    env
+};
+use dotenv::dotenv;
+use tokio::time::Duration;
+use reqwest::Client as HttpClient;
 
-curl -X POST localhost:443/post-bundle     -H "Content-Type: application/json"     -d '{
- "requesterPubkey": "somePublicKey",
- "name": "ExampleName",
-"symbol": "EXM",
-"uri": "https://example.com",
-"devBuyAmount": 3000000,
- "walletsBuyAmount": [3000000, 3000000, 3000000]
-}'
-
-Resources:
-
-https://github.com/metaplex-foundation/lut/tree/main -> LOOKUP TABLES 
-https://github.com/jup-ag/jupiter-swap-api-client/blob/main/example/src/main.rs -> JUP API 
-https://github.com/jito-labs/jito-rust-rpc/blob/master/examples/basic_bundle.rs -> JITO RPC 
-https://docs.rs/pumpfun/latest/src/pumpfun/lib.rs.html -> PUMPFUN 
-https://github.com/enlomy/pumpfun-solana-smart-contract/tree/main -> PUMPFUN SOLANA SMART CONTRACT 
-
-
+use solana_sdk::{
+    pubkey::Pubkey,
+    transaction::VersionedTransaction,
+    rent::Rent,
+    signature::{Keypair, Signer},
+    address_lookup_table::AddressLookupTableAccount,
+    instruction::Instruction,
+};
+use solana_client::rpc_client::RpcClient;
 
 
+use crate::jito::jito::JitoBundle;
+use crate::pumpfun::pump::PumpFun;
+use crate::config::{RPC_URL, FEE_AMOUNT, BUFFER_AMOUNT, JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL};
+use crate::params::{CreateTokenMetadata, KeypairWithAmount};
+use crate::solana::{
+    utils::{load_keypair, transfer_ix, build_transaction}, 
+    lut::{create_lut, extend_lut, verify_lut_ready},
+    helper::pack_instructions,
+};
 
-async fn process_bundle(&mut self,
+pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
     dev_keypair_with_amount: KeypairWithAmount,
     mint: Keypair,
     requester_pubkey: String,
-    token_metadata: CreateTokenMetadata,
-) {
+    token_metadata: CreateTokenMetadata
+) -> Result<AddressLookupTableAccount, Box<dyn std::error::Error + Send + Sync>> {
+    dotenv().ok();
+    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
+    let admin_kp = load_keypair(&admin_keypair_path).unwrap();
+
+    let jito_rpc = RpcClient::new(RPC_URL);
+    let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
+
     let client = RpcClient::new(RPC_URL);
     let dev_keypair_path = format!("accounts/{}/{}.json", requester_pubkey, dev_keypair_with_amount.keypair.pubkey());
 
@@ -36,10 +50,10 @@ async fn process_bundle(&mut self,
 
     let payer: Arc<Keypair> = Arc::new(loaded_dev_keypair);
     let mut pumpfun_client = PumpFun::new(payer);
-    println!("Creating lut with admin public key:  {}", self.admin_kp.pubkey());
+    println!("Creating lut with admin public key:  {}", admin_kp.pubkey());
     println!("Keypairs with amount: {:?}", keypairs_with_amount);
     
-    let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) = create_lut(&client, &self.admin_kp).unwrap();
+    let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) = create_lut(&client, &admin_kp).unwrap();
     //Addresses to extend with lut 
     let mut addresses: Vec<Pubkey> = keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect();
     let without_dev_addresses = addresses.clone();
@@ -60,16 +74,16 @@ async fn process_bundle(&mut self,
     }
 
     //Extend lut with addresses 
-    let extended_lut = extend_lut(&client, &self.admin_kp, lut.0, &addresses).unwrap();
+    let extended_lut = extend_lut(&client, &admin_kp, lut.0, &addresses).unwrap();
 
 
     println!("LUT extended with addresses: {:?}", extended_lut);
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle 
 
     println!("Amount of lamports to transfer to dev: {}", dev_keypair_with_amount.amount);
-    let admin_to_dev_ix = transfer_ix(&self.admin_kp.pubkey(), &dev_keypair_with_amount.keypair.pubkey(), dev_keypair_with_amount.amount);
-    let admin_to_keypair_ixs: Vec<Instruction> = keypairs_with_amount.iter().map(|keypair| transfer_ix(&self.admin_kp.pubkey(), &keypair.keypair.pubkey(), keypair.amount)).collect();
-    let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
+    let admin_to_dev_ix = transfer_ix(&admin_kp.pubkey(), &dev_keypair_with_amount.keypair.pubkey(), dev_keypair_with_amount.amount);
+    let admin_to_keypair_ixs: Vec<Instruction> = keypairs_with_amount.iter().map(|keypair| transfer_ix(&admin_kp.pubkey(), &keypair.keypair.pubkey(), keypair.amount)).collect();
+    let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
 
     //Instructions to send sol from admin to dev + keypairs 
     let mut instructions = admin_to_keypair_ixs;
@@ -83,14 +97,14 @@ async fn process_bundle(&mut self,
         addresses: addresses.to_vec(),
     };
 
-    let tx = build_transaction(&client, &instructions, vec![&self.admin_kp], final_lut);
+    let tx = build_transaction(&client, &instructions, vec![&admin_kp], final_lut);
     
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
     //Sending transaction to fund wallets from admin. 
     //TODO: Check if this is complete. might require tip instruction, signature to tx, and confirmation that bundle is complete
-    let _ = self.jito.one_tx_bundle(tx).await.unwrap();
+    let _ = jito.one_tx_bundle(tx).await.unwrap();
 
     //Close lut - TODO add as side job to diminish waiting time for the user 
     //close_lut(&client, &self.admin_kp, lut.0);
@@ -119,8 +133,6 @@ async fn process_bundle(&mut self,
         key: mint.pubkey(),
         addresses: without_dev_addresses.to_vec(),
     };
-
-    self.pubkey_to_lut.insert(bundle_lut.0, final_bundle_lut.clone());
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction 
 
@@ -167,7 +179,7 @@ async fn process_bundle(&mut self,
 
     //Step 6: Prepare tip instruction 
 
-    let jito_tip_ix = self.jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
+    let jito_tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
     instructions.push(jito_tip_ix);
     //Step 7: Bundle instructions into transactions
     
@@ -211,5 +223,22 @@ async fn process_bundle(&mut self,
     }
 
      // Send the bundle....
-     let _ = self.jito.submit_bundle(transactions).await.unwrap();
+     let _ = jito.submit_bundle(transactions).await.unwrap();
+
+     //Make callback 
+     let http_client = HttpClient::new();
+
+     let callback_payload = serde_json::json!({
+         "mint": mint.pubkey().to_string(),
+     });
+
+     match http_client.post(ORCHESTRATOR_URL)
+         .json(&callback_payload)
+         .send()
+         .await {
+             Ok(_) => println!("Successfully sent completion signal to orchestrator"),
+             Err(e) => eprintln!("Failed to send completion signal: {}", e),
+     }
+
+     Ok(final_bundle_lut)
 }

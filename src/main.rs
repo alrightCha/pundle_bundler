@@ -5,7 +5,6 @@ mod config;
 mod handlers;
 mod params;
 
-use solana::refund::refund_keypairs;
 use std::sync::Arc;
 use config::setup_https_config;
 use config::{DEFAULT_HOST, HTTPS_PORT};
@@ -23,6 +22,9 @@ use std::env;
 use std::str::FromStr;
 
 use std::net::SocketAddr;
+use tokio::sync::Mutex;
+use std::collections::HashMap;
+use solana_sdk::address_lookup_table::AddressLookupTableAccount;
 
 use handlers::{
     health_check, 
@@ -32,7 +34,6 @@ use handlers::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    refund_keypairs().await;
     //seup mode from env 
     let mode = env::var("MODE").unwrap_or_else(|_| "DEBUG".to_string());
     //setup ip address from env 
@@ -49,7 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("Admin keypair loaded: {}", admin_keypair.pubkey());
 
-    let handler_manager = Arc::new(HandlerManager::new(admin_keypair));
+    let handler_manager = Arc::new(Mutex::new(HandlerManager::new(admin_keypair)));
+    //Storing LUT to access it across handlers 
+    let pubkey_to_lut:  Arc<Mutex<HashMap<String, AddressLookupTableAccount>>> = Arc::new(Mutex::new(HashMap::new()));
 
     //setup app
     let app = Router::new()
@@ -58,21 +61,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let handler_manager = Arc::clone(&handler_manager);
             move |payload| {
                 let handler_manager = Arc::clone(&handler_manager);
-                async move { handler_manager.get_bundle_wallets(payload).await }
+                async move { handler_manager.lock().await.get_bundle_wallets(payload).await }
             }
         }))
         .route("/post-bundle", post({
             let handler_manager = Arc::clone(&handler_manager);
+            let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
             move |payload| {
                 let handler_manager = Arc::clone(&handler_manager);
-                async move { handler_manager.handle_post_bundle(payload).await }
+                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
+                async move { handler_manager.lock().await.handle_post_bundle(pubkey_to_lut, payload).await }
             }
         }))
         .route("/pool-info", post({
             let handler_manager = Arc::clone(&handler_manager);
             move |payload| {
                 let handler_manager = Arc::clone(&handler_manager);
-                async move { handler_manager.get_pool_information(payload).await }
+                async move { handler_manager.lock().await.get_pool_information(payload).await }
+            }
+        }))
+        .route("/sell", post({
+            let handler_manager = Arc::clone(&handler_manager);
+            let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
+            move |payload| {
+                let handler_manager = Arc::clone(&handler_manager);
+                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
+                async move { handler_manager.lock().await.sell_for_keypair(pubkey_to_lut, payload).await }
+            }
+        }))
+        .route("/sell-all", post({
+            let handler_manager = Arc::clone(&handler_manager);
+            let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
+            move |payload| {
+                let handler_manager = Arc::clone(&handler_manager);
+                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
+                async move { handler_manager.lock().await.sell_all_leftover_tokens(pubkey_to_lut, payload).await }
             }
         }))
         .layer(ServiceBuilder::new().layer(CorsLayer::permissive()));
