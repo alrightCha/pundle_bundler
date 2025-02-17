@@ -1,5 +1,6 @@
 use axum::Json;
 use solana_sdk::transaction::VersionedTransaction;
+use std::str::FromStr;
 use std::sync::Arc;
 use solana_sdk::address_lookup_table::AddressLookupTableAccount;
 use solana_sdk::pubkey::Pubkey;
@@ -9,7 +10,8 @@ use solana_sdk::instruction::Instruction;
 use solana_client::rpc_client::RpcClient;
 use anchor_client::Cluster;
 use solana_sdk::rent::Rent;
-use crate::params::CreateTokenMetadata;
+use crate::params::{CreateTokenMetadata, GetPoolInformationRequest, PoolInformation};
+use crate::pumpfun::utils::get_splits;
 use tokio::time::Duration;
 use std::collections::HashMap;
 
@@ -19,14 +21,15 @@ use crate::params::{
     PostBundleResponse, 
     GetBundleWalletsRequest, 
     GetBundleWalletsResponse, 
-    BundleWallet
+    BundleWallet,
+    Wallet
 };
 
 //My crates 
 use crate::jito::jito::JitoBundle;
 use crate::solana::grind::grind;
 use crate::solana::lut::{create_lut, extend_lut, verify_lut_ready};
-use crate::solana::utils::{create_keypair, transfer_ix, build_transaction, load_keypair};
+use crate::solana::utils::{create_keypair, transfer_ix, build_transaction, load_keypair, get_keypairs_for_pubkey};
 use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL, FEE_AMOUNT, BUFFER_AMOUNT};
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::helper::pack_instructions;
@@ -36,7 +39,6 @@ use crate::solana::helper::pack_instructions;
 pub async fn health_check() -> &'static str {
     "Pundle, working"
 }
-
 
 #[derive(Debug)]
 struct KeypairWithAmount {
@@ -78,12 +80,12 @@ impl HandlerManager {
     pub async fn handle_post_bundle(&self,
         Json(payload): Json<PostBundleRequest>,
     ) -> Json<PostBundleResponse> {
+        println!("Received payload with wallets buy amount: {:?}", payload.wallets_buy_amount);
         let client = RpcClient::new(RPC_URL);
 
         //Step 0: Initialize variables 
 
         let requester_pubkey = payload.requester_pubkey.clone();  
-
         //Creating mint keypair ending in pump 
         let mint_pubkey = grind(requester_pubkey.clone()).unwrap();
         
@@ -101,19 +103,17 @@ impl HandlerManager {
             uri: payload.uri
         };
         
-        let mut pumpfun_client = PumpFun::new(
-            Cluster::Mainnet,
-            payer,
-            Some(false)
-        );
+        let mut pumpfun_client = PumpFun::new(payer);
 
         let mint = load_keypair(&format!("accounts/{}/{}.json", requester_pubkey, mint_pubkey)).unwrap();
 
         //Preparing keypairs and respective amounts in sol 
         let dev_keypair_with_amount = KeypairWithAmount { keypair: dev_keypair, amount: payload.dev_buy_amount };
         
+        let wallets_buy_amount = get_splits(payload.dev_buy_amount, payload.wallets_buy_amount);
+        println!("Wallets buy amount: {:?}", wallets_buy_amount);
         //TODO: Break down wallets buy amount into array of newly generated keypairs with amount of lamports for each keypair 
-        let keypairs_with_amount: Vec<KeypairWithAmount> = payload.wallets_buy_amount
+        let keypairs_with_amount: Vec<KeypairWithAmount> = wallets_buy_amount
             .iter()
             .map(|amount| KeypairWithAmount { keypair: create_keypair(&requester_pubkey)
             .unwrap(), amount: *amount })
@@ -122,9 +122,9 @@ impl HandlerManager {
         //STEP 1: Create and extend lut to spread solana across wallets 
 
         println!("Creating lut with admin public key:  {}", self.admin_kp.pubkey());
-
-
-        let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) = create_lut(&client, &self.admin_kp).unwrap();
+        println!("Keypairs with amount: {:?}", keypairs_with_amount);
+        /*
+         let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) = create_lut(&client, &self.admin_kp).unwrap();
         //Addresses to extend with lut 
         let mut addresses: Vec<Pubkey> = keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect();
         let without_dev_addresses = addresses.clone();
@@ -295,12 +295,31 @@ impl HandlerManager {
 
          // Send the bundle....
          let _ = self.jito.submit_bundle(transactions).await.unwrap();
-    
-        Json(PostBundleResponse {
-            public_keys: keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey().to_string()).collect(),
-            dev_wallet: dev_keypair_with_amount.keypair.pubkey().to_string(),
-            mint_pubkey: mint_pubkey,
-        })
+         */
+       
+
+        let mut wallets: Vec<Wallet> = keypairs_with_amount.iter().map(|keypair| Wallet {
+            pubkey: keypair.keypair.pubkey().to_string(),
+            secret_key: bs58::encode(keypair.keypair.to_bytes()).into_string(),
+            is_dev: false,
+            amount: keypair.amount,
+        }).collect();
+
+        wallets.push(Wallet {
+            pubkey: dev_keypair_with_amount.keypair.pubkey().to_string(),
+            secret_key: bs58::encode(dev_keypair_with_amount.keypair.to_bytes()).into_string(),
+            is_dev: true,
+            amount: dev_keypair_with_amount.amount,
+        });
+
+        let response = PostBundleResponse {
+            pubkey: requester_pubkey,
+            mint: mint.pubkey().to_string(),
+            due_amount: payload.wallets_buy_amount + payload.dev_buy_amount,
+            wallets,
+        };
+        println!("Response: {:?}", response);
+        Json(response)
     }
 
 
@@ -309,14 +328,44 @@ impl HandlerManager {
     pub async fn get_bundle_wallets(&self,
         Json(payload): Json<GetBundleWalletsRequest>,
     ) -> Json<GetBundleWalletsResponse> {
-        // TODO: Implement your bundle retrieval logic here
-        // This is a placeholder response
+        let requester_pubkey = payload.requester_pubkey;
+        
+        // Get keypairs using the existing utility function
+        let keypairs = match get_keypairs_for_pubkey(&requester_pubkey) {
+            Ok(kps) => kps,
+            Err(e) => {
+                eprintln!("Error getting keypairs: {}", e);
+                Vec::new() // Return empty vector if there's an error
+            }
+        };
+
+        // Convert keypairs to BundleWallet format
+        let bundle_wallets: Vec<BundleWallet> = keypairs.iter().map(|kp| {
+            BundleWallet {
+                pubkey: kp.pubkey().to_string(),
+                secret_key: bs58::encode(kp.to_bytes()).into_string(),
+            }
+        }).collect();
+
         Json(GetBundleWalletsResponse {
-            keypairs: vec![BundleWallet {
-                pubkey: "sample_pubkey".to_string(),
-                secret_key: "sample_secret_key".to_string(),
-            }],
+            keypairs: bundle_wallets,
         })
+    }
+
+    //Get pool information for given token 
+    pub async fn get_pool_information(&self,
+        Json(payload): Json<GetPoolInformationRequest>,
+    ) -> Json<PoolInformation> {
+        println!("Received payload: {:?}", payload);
+        let mint = Pubkey::from_str(&payload.mint).unwrap();
+        let loaded_admin_kp = Keypair::from_bytes(&self.admin_kp.to_bytes()).unwrap();
+        let payer: Arc<Keypair> = Arc::new(loaded_admin_kp);
+        
+        let pumpfun_client = PumpFun::new(payer);
+
+        let pool_information = pumpfun_client.get_pool_information(&mint).await.unwrap();
+
+        Json(pool_information)
     }
 
     //Receive request to sell a token 

@@ -6,8 +6,7 @@ use anchor_client::{
         signature::Keypair,
         signer::Signer,
         instruction::Instruction,
-    },
-    Cluster
+    }
 };
 use anchor_spl::associated_token::{
     get_associated_token_address,
@@ -21,7 +20,8 @@ use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::sync::Arc;
 
 use crate::pumpfun::bonding_curve::BondingCurve;
-
+use crate::params::PoolInformation;
+use crate::config::RPC_URL;
 /// Configuration for priority fee compute unit parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriorityFee {
@@ -55,17 +55,10 @@ impl PumpFun {
     ///
     /// Returns a new PumpFun client instance configured with the provided parameters
     pub fn new(
-        cluster: Cluster,
-        payer: Arc<Keypair>,
-        ws: Option<bool>,
+        payer: Arc<Keypair>
     ) -> Self {
         // Create Solana RPC Client with either WS or HTTP endpoint
-        let url = if ws.unwrap_or(false) {
-            cluster.ws_url()
-        } else {
-            cluster.url()
-        };
-        let rpc: RpcClient = RpcClient::new(url.to_string());
+        let rpc: RpcClient = RpcClient::new(RPC_URL.to_string());
 
         let bonding_curve = BondingCurve::new();
         // Return configured PumpFun client
@@ -316,5 +309,23 @@ impl PumpFun {
 
         pumpfun::accounts::BondingCurveAccount::try_from_slice(&account.data)
             .map_err(pumpfun::error::ClientError::BorshError)
+    }
+
+    pub async fn get_pool_information(&self, mint: &Pubkey) -> Result<PoolInformation, pumpfun::error::ClientError> {
+        let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
+        let current_mc = bonding_curve_account.get_market_cap_sol();
+        let sell_price = bonding_curve_account.get_sell_price(10000 * 1_000_000, 500).unwrap(); // price per 10k tokens
+        let is_bonding_curve_complete = bonding_curve_account.complete;
+        let reserve_sol = bonding_curve_account.real_sol_reserves;
+        let reserve_token = bonding_curve_account.real_token_reserves;
+
+        let pool_information = PoolInformation {
+            current_mc,
+            sell_price,
+            is_bonding_curve_complete,
+            reserve_sol,
+            reserve_token,
+        };
+        Ok(pool_information)
     }
 }

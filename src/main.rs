@@ -23,7 +23,6 @@ use std::env;
 use std::str::FromStr;
 
 use std::net::SocketAddr;
-use log::info;
 
 use handlers::{
     health_check, 
@@ -69,9 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move { handler_manager.handle_post_bundle(payload).await }
             }
         }))
+        .route("/pool-info", post({
+            let handler_manager = Arc::clone(&handler_manager);
+            move |payload| {
+                let handler_manager = Arc::clone(&handler_manager);
+                async move { handler_manager.get_pool_information(payload).await }
+            }
+        }))
         .layer(ServiceBuilder::new().layer(CorsLayer::permissive()));
 
-    info!("Starting Server [{}] at: {}", mode, addr);
+    println!("Starting Server [{}] at: {}", mode, addr);
 
     //setup https config
     match mode.as_str() {

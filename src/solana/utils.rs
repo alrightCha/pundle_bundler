@@ -125,6 +125,31 @@ pub fn get_slot_and_blockhash(client: &RpcClient) -> Result<(u64, Hash), Box<dyn
     let slot = client.get_slot()?;
     Ok((slot, blockhash))
 }
+
+pub fn get_keypairs_for_pubkey(pubkey: &String) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
+    let mut keypairs = Vec::new();
+    let dir_path = format!("accounts/{}", pubkey);
+    let dir_entries = std::fs::read_dir(dir_path)?;
+       // Iterate over directory entries
+       for entry in dir_entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!("Failed to read directory entry: {}", e);
+                continue;
+            }
+        };
+
+        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+            let file_path = entry.path();
+    
+            let keypair = load_keypair(file_path.to_str().unwrap()).unwrap();
+            keypairs.push(keypair);
+        }
+    }
+    Ok(keypairs)
+}
+
 //TODO: Add a function that receives instructions and returns a an array of transactions, 
 //Make sure the transactions take as many instructions as possible to be efficient 
 

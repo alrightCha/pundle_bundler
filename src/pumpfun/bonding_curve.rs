@@ -30,7 +30,7 @@ impl BondingCurve {
             return Ok(793100000 - until_now_bought);
         }
 
-        Ok(eligible_amount * 1_000_000) //Conver to decimals 6 for spl tokens
+        Ok(eligible_amount) //Conver to decimals 6 for spl tokens
     }
 }
 
