@@ -8,10 +8,27 @@ use solana_sdk::signer::Signer;
 use solana_sdk::signature::Keypair;
 use solana_sdk::instruction::Instruction;
 use solana_client::rpc_client::RpcClient;
-use crate::params::{CreateTokenMetadata, GetPoolInformationRequest, PoolInformation, SellAllRequest, UniqueSellRequest, SellResponse};
+use solana_sdk::transaction::Transaction;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
+use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::commitment_config::CommitmentLevel;
+
+use crate::params::{
+    CreateTokenMetadata,
+    GetPoolInformationRequest, 
+    PoolInformation, 
+    SellAllRequest, 
+    SellResponse, 
+    UniqueSellRequest, 
+    WithdrawAllSolRequest, 
+    RecursivePayRequest, 
+};
 use crate::pumpfun::utils::get_splits;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::refund::refund_keypairs;
+use crate::solana::recursive_pay::recursive_pay;
+
 use tokio::spawn;
 
 //Params needed for the handlers 
@@ -71,7 +88,7 @@ impl HandlerManager {
     // -> map requester to keypairs, 
     // -> return array of public keys
     pub async fn handle_post_bundle(&mut self,
-        pubkey_to_lut: Arc<Mutex<HashMap<String, AddressLookupTableAccount>>>,
+        pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
         Json(payload): Json<PostBundleRequest>,
     ) -> Json<PostBundleResponse> {
         println!("Received payload with wallets buy amount: {:?}", payload.wallets_buy_amount);
@@ -95,7 +112,11 @@ impl HandlerManager {
         //Preparing keypairs and respective amounts in sol 
         let dev_keypair_with_amount = KeypairWithAmount { keypair: dev_keypair, amount: payload.dev_buy_amount };
         
+        println!("Wallet buy amount: {:?}", payload.wallets_buy_amount);
         let wallets_buy_amount = get_splits(payload.dev_buy_amount, payload.wallets_buy_amount);
+
+        //Get split length and break if more than 12
+        println!("Wallets buy amount length: {:?}", wallets_buy_amount.len());
         println!("Wallets buy amount: {:?}", wallets_buy_amount);
         //TODO: Break down wallets buy amount into array of newly generated keypairs with amount of lamports for each keypair 
         let keypairs_with_amount: Vec<KeypairWithAmount> = wallets_buy_amount
@@ -131,6 +152,8 @@ impl HandlerManager {
         spawn(async move {
             match process_bundle(keypairs_with_amount, dev_keypair_with_amount, mint, payload.requester_pubkey, token_metadata).await {
                 Ok(lut) => {
+                    println!("Inserting LUT for mint: {:?}", mint_pubkey);
+                    println!("LUT: {:?}", lut);
                     pubkey_to_lut.lock().await.insert(mint_pubkey, lut);
                 },
                 Err(e) => {
@@ -177,7 +200,6 @@ impl HandlerManager {
     pub async fn get_pool_information(&self,
         Json(payload): Json<GetPoolInformationRequest>,
     ) -> Json<PoolInformation> {
-        println!("Received payload: {:?}", payload);
         let mint = Pubkey::from_str(&payload.mint).unwrap();
         let loaded_admin_kp = Keypair::from_bytes(&self.admin_kp.to_bytes()).unwrap();
         let payer: Arc<Keypair> = Arc::new(loaded_admin_kp);
@@ -190,7 +212,6 @@ impl HandlerManager {
     }
 
     pub async fn sell_for_keypair(&self, 
-        pubkey_to_lut: Arc<Mutex<HashMap<String, AddressLookupTableAccount>>>,
         Json(payload): Json<UniqueSellRequest>,
     ) -> Json<SellResponse> {
         let requester: String = payload.pubkey;
@@ -198,7 +219,10 @@ impl HandlerManager {
         let amount: u64 = payload.amount * TOKEN_AMOUNT_MULTIPLIER;
         let wallet: String = payload.wallet;
         let mint_pubkey: Pubkey = Pubkey::from_str(&mint).unwrap();
-        
+        println!("Mint pubkey: {:?}", mint_pubkey);
+        println!("Amount: {:?}", amount);
+        println!("Wallet: {:?}", wallet);
+        println!("Requester: {:?}", requester);
         let keypair = load_keypair(&format!("accounts/{}/{}.json", requester, wallet)).unwrap();
         
         let client = RpcClient::new(RPC_URL);
@@ -209,11 +233,27 @@ impl HandlerManager {
         
         let sell_ixs = pumpfun_client.sell_ix(&mint_pubkey, &keypair, Some(amount), None, None).await.unwrap();
 
-        let lut = pubkey_to_lut.lock().await;
-        let lut_account = lut.get(&mint).ok_or("LUT not found for this mint").unwrap();
-        let tx = build_transaction(&client, &sell_ixs, vec![&keypair], lut_account.clone());
+        let blockhash = client.get_latest_blockhash().unwrap();
 
-        let _ = self.jito.one_tx_bundle(tx).await.unwrap();
+        let tx = Transaction::new_signed_with_payer(
+            &sell_ixs,
+            Some(&keypair.pubkey()),
+            &[&keypair],
+            blockhash,
+        );
+
+        let config = RpcSendTransactionConfig {
+            skip_preflight: true,
+            preflight_commitment: Some(CommitmentLevel::Confirmed),
+            encoding: None,
+            max_retries: None,
+            min_context_slot: None,
+        };
+
+        let signature = client.send_transaction_with_config(&tx, config).unwrap();
+        client.confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed()).unwrap();
+
+        println!("Signature: {:?}", signature);
 
         Json(SellResponse {
             success: true,
@@ -222,50 +262,86 @@ impl HandlerManager {
 
     //This function sells all leftover tokens for a given mint and deployer 
     pub async fn sell_all_leftover_tokens(&self,
-        pubkey_to_lut: Arc<Mutex<HashMap<String, AddressLookupTableAccount>>>,
+        pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
         Json(payload): Json<SellAllRequest>,
     ) -> Json<SellResponse> {
-        let with_admin_transfer: bool = payload.with_admin_transfer;
-        let requester: String = payload.owner_pubkey;
-        let mint: String = payload.token_mint;
+        let with_admin_transfer: bool = payload.admin;
+        let requester: String = payload.pubkey;
+        let mint: String = payload.mint;
         let mint_pubkey: Pubkey = Pubkey::from_str(&mint).unwrap();
 
         //Initializing pumpfun client & rpc client 
         let client = RpcClient::new(RPC_URL);
 
         let loaded_admin_kp = Keypair::from_bytes(&self.admin_kp.to_bytes()).unwrap();
-        let payer: Arc<Keypair> = Arc::new(loaded_admin_kp);
+
+        let payer: Arc<Keypair> = Arc::new(loaded_admin_kp.insecure_clone());
 
         let pumpfun_client = PumpFun::new(payer);
 
         // Get keypairs using the existing utility function and filter out the mint keypair
-        let keypairs = match get_keypairs_for_pubkey(&requester) {
-            Ok(kps) => kps.into_iter()
-                         .filter(|kp| kp.pubkey() != mint_pubkey)
-                         .collect(),
+        let mut keypairs = match get_keypairs_for_pubkey(&requester) {
+            Ok(kps) => kps,
             Err(e) => {
                 eprintln!("Error getting keypairs: {}", e);
                 Vec::new() // Return empty vector if there's an error
             }
-        };
+        }; 
 
+        let keypairs_no_mint: Vec<Keypair> = keypairs.iter().filter(|kp| kp.pubkey() != mint_pubkey).map(|kp| kp.insecure_clone()).collect();
+
+        keypairs.push(loaded_admin_kp);
+        
         let mut instructions: Vec<Instruction> = Vec::new();
 
-        for keypair in keypairs {
+        for keypair in keypairs_no_mint {
             let sell_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
             instructions.extend(sell_ixs);
         }
 
-        let unlocked_lut = pubkey_to_lut.lock().await;
-        let lut_account = unlocked_lut.get(&mint).ok_or("LUT not found for this mint").unwrap();
-        let packed_ixs = pack_instructions(instructions, lut_account);
+        let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
+        instructions.push(jito_tip_ix);
 
-        let txs: Vec<VersionedTransaction> = packed_ixs.iter().map(|ix| build_transaction(&client, &ix.instructions, vec![&self.admin_kp], lut_account.clone())).collect();
+        let unlocked_lut = pubkey_to_lut.lock().await;
+        let lut_account_pubkey = unlocked_lut.get(&mint);
+        let txs: Vec<VersionedTransaction> = match lut_account_pubkey {
+            Some(lut_pubkey) => {
+                println!("LUT pubkey FOUND ! : {:?}", lut_pubkey);
+                let mut transactions: Vec<VersionedTransaction> = Vec::new();
+                let raw_account = client.get_account(&lut_pubkey).unwrap();
+                let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+                let address_lookup_table_account = AddressLookupTableAccount {
+                    key: *lut_pubkey,
+                    addresses: address_lookup_table.addresses.to_vec(),
+                };
+                let packed_ixs = pack_instructions(instructions, &address_lookup_table_account);
+
+                for ix in packed_ixs {
+                    let mut tx_signers = Vec::new();
+                    for required_signer in &ix.signers {
+                        match keypairs.iter().find(|kp| kp.pubkey() == *required_signer) {
+                            Some(kp) => tx_signers.push(kp),
+                            None => {
+                                eprintln!("Missing keypair for signer: {}", required_signer);
+                            }
+                        }
+                    }
+
+                    let tx = build_transaction(&client, &ix.instructions, tx_signers, address_lookup_table_account.clone());
+                    transactions.push(tx);
+                }
+                transactions
+            }
+            None => {
+                println!("LUT pubkey NOT FOUND !");
+                return Json(SellResponse { success: false });
+            }
+        };
 
         let _ = self.jito.submit_bundle(txs).await.unwrap();
 
         if with_admin_transfer {
-            refund_keypairs(requester, mint).await;
+            refund_keypairs(requester, self.admin_kp.pubkey().to_string(), mint).await;
         }
 
         Json(SellResponse {
@@ -273,23 +349,29 @@ impl HandlerManager {
         })
     }
 
-    //Receive request to sell a token 
-    // Must check if the amount is valid, and if the user has paid for the bundle concerning this keypair
-    // - Requester pubkey
-    // - token address
-    // - amount of tokens to sell 
+    pub async fn withdraw_all_sol(&self, 
+        Json(payload): Json<WithdrawAllSolRequest>,
+    ) -> Json<SellResponse> {
+        let requester: String = payload.pubkey;
+        let mint: String = payload.mint;
+        let to = Pubkey::from_str(&requester).unwrap();
+        refund_keypairs(requester, to.to_string(), mint).await;
+        Json(SellResponse {
+            success: true,
+        })
+    }
 
-    //Receive request to sell all tokens 
-    // Must check if the amount is valid, and if the user has paid for the bundle concerning this keypair
-    // - Requester pubkey
-    // - token address
-    // - amount of tokens to sell 
+    pub async fn recursive_pay(&self, 
+        Json(payload): Json<RecursivePayRequest>,
+    ) -> Json<SellResponse> {
+        let requester: String = payload.pubkey;
+        let mint: String = payload.mint;
+        let lamports: u64 = payload.lamports;
 
-    //Receive request to sell unique tokens 
-    // Must check if the amount is valid, and if the user has paid for the bundle concerning this keypair
-    // - Requester pubkey
-    // - token address
-    // - amount of tokens to sell 
-
-    //Receive request to sell in bulk 
+        let signatures = recursive_pay(requester, mint, lamports).await;
+        println!("Signatures: {:?}", signatures);
+        Json(SellResponse {
+            success: true
+        })
+    }
 }

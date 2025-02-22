@@ -8,13 +8,13 @@ use solana_sdk::pubkey::Pubkey;
 use crate::config::RPC_URL;
 use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; // For parsing JSON files
 
-pub async fn refund_keypairs(pubkey: String, mint: String) {
+pub async fn refund_keypairs(from: String, recipient: String, mint: String) {
     println!("Refunding keypairs");
     let client = RpcClient::new(RPC_URL);
-    let recipient = Pubkey::from_str("FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH").unwrap();
+    let recipient = Pubkey::from_str(&recipient).unwrap();
 
     // Directory containing keypair JSON files
-    let dir_path = format!("accounts/{}", pubkey);
+    let dir_path = format!("accounts/{}", from);
 
     // Read the directory
     let dir_entries = match fs::read_dir(&dir_path) {

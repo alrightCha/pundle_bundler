@@ -15,6 +15,7 @@ use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::commitment_config::CommitmentLevel;
 use std::result::Result::Ok;
 use anyhow::Result;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 
 use crate::solana::utils::get_slot_and_blockhash;
 
@@ -41,6 +42,9 @@ pub fn create_lut(client: &RpcClient, payer: &Keypair) -> Result<(Pubkey, Signat
     // Fetch the latest slot and blockhash just before creating the transaction
     let (slot, blockhash) = get_slot_and_blockhash(&client)?;
 
+    // Add priority fee instruction
+    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(50_000);
+
     // Create the lookup table instruction
     let (ix, pda) = create_lookup_table(
         payer.pubkey(),
@@ -48,9 +52,9 @@ pub fn create_lut(client: &RpcClient, payer: &Keypair) -> Result<(Pubkey, Signat
         slot,
     );
 
-    // Create and sign the transaction
+    // Create and sign the transaction with both instructions
     let tx = Transaction::new_signed_with_payer(
-        &[ix],
+        &[priority_fee_ix, ix],
         Some(&payer.pubkey()),
         &[&payer],
         blockhash,
@@ -82,6 +86,9 @@ pub fn extend_lut(
 ) -> Result<Signature, ClientError> {
     let (_, blockhash) = get_slot_and_blockhash(&client).unwrap();
 
+    // Add priority fee instruction
+    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(50_000);
+
     let ix = extend_lookup_table(
         lut_pubkey,
         authority.pubkey(),
@@ -90,7 +97,7 @@ pub fn extend_lut(
     );
 
     let tx = Transaction::new_signed_with_payer(
-        &[ix],
+        &[priority_fee_ix, ix],
         Some(&authority.pubkey()),
         &[&authority],
         blockhash,

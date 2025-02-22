@@ -58,15 +58,20 @@ pub struct UniqueSellRequest {
 
 #[derive(Deserialize)]
 pub struct SellAllRequest {
-    pub owner_pubkey: String,
-    pub token_mint: String,
-    pub slippage_bps: u16,
-    pub with_admin_transfer: bool,
+    pub pubkey: String,
+    pub mint: String,
+    pub admin: bool,
 }
 
 #[derive(Serialize)]
 pub struct SellResponse {
     pub success: bool,
+}
+
+#[derive(Deserialize)]
+pub struct WithdrawAllSolRequest {
+    pub pubkey: String,
+    pub mint: String,
 }
 
 #[derive(Deserialize)]
@@ -81,7 +86,6 @@ pub struct CreateTokenMetadata {
 pub struct GetPoolInformationRequest {
     pub mint: String,
 }
-
 
 #[derive(Debug)]
 #[derive(Serialize)]
@@ -99,4 +103,16 @@ pub struct PoolInformation {
 pub struct KeypairWithAmount {
     pub keypair: Keypair,
     pub amount: u64,
+}
+
+#[derive(Deserialize)]
+pub struct RecursivePayRequest {
+    pub pubkey: String,
+    pub mint: String,
+    pub lamports: u64,
+}
+
+#[derive(Serialize)]
+pub struct RecursivePayResponse {
+    pub signatures: Vec<String>,
 }

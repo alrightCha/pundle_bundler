@@ -85,15 +85,11 @@ impl JitoBundle {
         // Serialize each transaction and encode it using bs58
 
         //TODO: Check if this step is necessary
-        let serialized_txs: Result<Vec<String>, Box<dyn Error>> = transactions
+        let serialized_txs: Vec<String> = transactions
         .into_iter()
-        .map(|tx| {
-            let serialized = bincode::serialize(&tx)?;
-            Ok(bs58::encode(serialized).into_string()) // Base58 encoding here
-        })
+        .map(|tx| bs58::encode(bincode::serialize(&tx).unwrap()).into_string())
         .collect();
 
-        let serialized_txs = serialized_txs.unwrap();
         let bundle = json!(serialized_txs);
     
         // UUID for the bundle

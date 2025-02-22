@@ -17,9 +17,9 @@ impl BondingCurve {
             return Ok(0);
         }
 
-        let sol_amount = lamports_amount / LAMPORTS_PER_SOL;
+        let sol_amount = lamports_amount as f64 / LAMPORTS_PER_SOL as f64;
         
-        let eligible_amount = 1073000191 - self.tokens_bought - 32190005730 / (self.reserve_sol/LAMPORTS_PER_SOL + sol_amount);
+        let eligible_amount = 1073000191 - self.tokens_bought - 32190005730 / ((self.reserve_sol as f64 /LAMPORTS_PER_SOL as f64 + sol_amount) as u64);
         let until_now_bought = self.tokens_bought.clone();
         self.tokens_bought += eligible_amount;
         self.reserve_sol += lamports_amount;
@@ -44,18 +44,22 @@ mod tests {
         
         // Test different buy amounts (in lamports)
         let test_amounts = vec![
-            1 * LAMPORTS_PER_SOL,     // 2 SOL
-            5 * LAMPORTS_PER_SOL,     // 5 SOL
-            1 * LAMPORTS_PER_SOL,    // 10 SOL
+            90000000,     // 2 SOL
+            1000000000,     // 5 SOL
+            1000000000,    // 10 SOL
         ];
 
         for amount in test_amounts {
             match curve.get_buy_price(amount) {
-                Ok(tokens_out) => println!(
-                    "Buy {} SOL -> Get  ({}) tokens", 
-                    amount as f64 / LAMPORTS_PER_SOL as f64,
-                    tokens_out,
-                ),
+                Ok(tokens_out) => {
+                    let num_digits = tokens_out.to_string().len();
+                    println!(
+                        "Buy {} SOL -> Get ({}) tokens with {} digits", 
+                        amount as f64 / LAMPORTS_PER_SOL as f64,
+                        tokens_out,
+                        num_digits
+                    );
+                },
                 Err(e) => println!("Error for {} SOL: {:?}", amount as f64 / LAMPORTS_PER_SOL as f64, e),
             }
         }

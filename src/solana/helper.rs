@@ -1,7 +1,8 @@
 use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
-    address_lookup_table::AddressLookupTableAccount
+    address_lookup_table::AddressLookupTableAccount,
+    compute_budget::ComputeBudgetInstruction,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -13,6 +14,25 @@ pub struct PackedTransaction {
     estimated_size: usize,
 }
 
+fn initialize_tx() -> PackedTransaction {
+    const BASE_TX_SIZE: usize = 64 + 3; // Signature (1 signer) + message header
+    const PRIORITY_FEE_IX_SIZE: usize = 9; // Size of priority fee instruction (1 + 0 accounts + 8 bytes data)
+
+    let mut tx = PackedTransaction {
+        instructions: Vec::new(),
+        accounts: HashMap::new(),
+        signers: HashSet::new(),
+        estimated_size: BASE_TX_SIZE + PRIORITY_FEE_IX_SIZE,
+    };
+
+    let priority_fee_amount = 200_000; // 0.000007 SOL
+    // Create priority fee instruction
+    let set_compute_unit_price_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+    tx.instructions.push(set_compute_unit_price_ix);
+
+    tx
+}
+
 /// Packs instructions into transactions while respecting Solana's limits with LUT
 pub fn pack_instructions(
     instructions: Vec<Instruction>,
@@ -20,16 +40,10 @@ pub fn pack_instructions(
 ) -> Vec<PackedTransaction> {
     const MAX_ACCOUNTS_PER_TX: usize = 256;
     const MAX_TX_SIZE: usize = 1100; // 1232 is the max size of a transaction, but using less to be safe
-    const BASE_TX_SIZE: usize = 64 + 3; // Signature (1 signer) + message header
 
     let lut_addresses: HashSet<Pubkey> = lut.addresses.iter().cloned().collect();
     let mut packed_txs = Vec::new();
-    let mut current_tx = PackedTransaction {
-        instructions: Vec::new(),
-        accounts: HashMap::new(),
-        signers: HashSet::new(),
-        estimated_size: BASE_TX_SIZE,
-    };
+    let mut current_tx = initialize_tx();
 
     for ix in instructions {
         let mut new_accounts = HashMap::new();
@@ -57,7 +71,6 @@ pub fn pack_instructions(
                 continue;
             }
 
-
             let is_writable = account.is_writable;
             if let Some(current_writable) = current_tx.accounts.get(&pubkey) {
                 if !current_writable && is_writable {
@@ -84,12 +97,7 @@ pub fn pack_instructions(
            total_accounts > MAX_ACCOUNTS_PER_TX {
             if !current_tx.instructions.is_empty() {
                 packed_txs.push(current_tx);
-                current_tx = PackedTransaction {
-                    instructions: Vec::new(),
-                    accounts: HashMap::new(),
-                    signers: HashSet::new(),
-                    estimated_size: BASE_TX_SIZE,
-                };
+                current_tx = initialize_tx();
             }
             // Re-evaluate adding the instruction to a new transaction
         }

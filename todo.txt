@@ -213,3 +213,15 @@ async fn process_bundle(&mut self,
      // Send the bundle....
      let _ = self.jito.submit_bundle(transactions).await.unwrap();
 }
+
+
+**LEFT TODO: 
+
+-check freepay 
+-check expiry working correctly 
+-check skip queue 
+-add recursive pay and debug 
+-detect when bonding curve is done - store to token in db 
+-monitor for initialiaze2 when it is the case to get the raydium pool info 
+-display 5 min, 1 hour, 6 hour, 24 hour volume, liquidity, price change, mcap and transactions in last hour in the ui once fetched from orchestrator 
+-enable sell with jup + 1% tax 

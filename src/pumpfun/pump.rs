@@ -1,4 +1,4 @@
-use crate::{config::TOKEN_AMOUNT_MULTIPLIER, params::CreateTokenMetadata};
+use crate::{config::{TOKEN_AMOUNT_MULTIPLIER, ADMIN_PUBKEY}, params::CreateTokenMetadata};
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{
@@ -6,20 +6,20 @@ use anchor_client::{
         signature::Keypair,
         signer::Signer,
         instruction::Instruction,
+        system_instruction::transfer,
     }
 };
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
-
 use borsh::BorshDeserialize;
 use pumpfun::instruction;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
-use crate::pumpfun::bonding_curve::BondingCurve;
+use crate::pumpfun::old_bc::BondingCurve;
 use crate::params::PoolInformation;
 use crate::config::RPC_URL;
 /// Configuration for priority fee compute unit parameters
@@ -117,7 +117,6 @@ impl PumpFun {
         keypair: &Keypair,
         amount_sol: u64,
         slippage_basis_points: Option<u64>,
-        priority_fee: Option<PriorityFee>,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await?;
@@ -128,20 +127,9 @@ impl PumpFun {
         let buy_amount_with_slippage =
             pumpfun::utils::calculate_with_slippage_buy(amount_sol, slippage_basis_points.unwrap_or(500));
 
+        println!("Amount sol: {:?}", amount_sol);
+        println!("Buy amount: {:?}", buy_amount);
         let mut instructions: Vec<Instruction> = Vec::new();
-
-        // Add priority fee if provided
-        if let Some(fee) = priority_fee {
-            if let Some(limit) = fee.limit {
-                let limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(limit);
-                instructions.push(limit_ix);
-            }
-
-            if let Some(price) = fee.price {
-                let price_ix = ComputeBudgetInstruction::set_compute_unit_price(price);
-                instructions.push(price_ix);
-            }
-        }
 
         // Add ata instruction or get acc if available
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
@@ -195,7 +183,20 @@ impl PumpFun {
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
         let balance = self.rpc.get_token_account_balance(&ata).await?;
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
-        let amount = amount_token.unwrap_or(balance_u64);
+        println!("Balance: {:?}", balance_u64);
+        println!("Amount token: {:?}", amount_token);
+        // If amount_token is greater than balance, use balance instead
+        let amount = match amount_token {
+            Some(requested_amount) => {
+                if requested_amount > balance_u64 {
+                    balance_u64
+                } else {
+                    requested_amount
+                }
+            },
+            None => balance_u64
+        };
+
         let global_account = self.get_global_account().await?;
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
         let min_sol_output = bonding_curve_account
@@ -208,19 +209,9 @@ impl PumpFun {
 
         let mut instructions: Vec<Instruction> = Vec::new();
 
-        // Add priority fee if provided
-        if let Some(fee) = priority_fee {
-            if let Some(limit) = fee.limit {
-                let limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(limit);
-                instructions.push(limit_ix);
-            }
-
-            if let Some(price) = fee.price {
-                let price_ix = ComputeBudgetInstruction::set_compute_unit_price(price);
-                instructions.push(price_ix);
-            }
-        }
-
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+        instructions.push(priority_fee_ix);
+        
         // Add sell instruction
         let sell_ix = instruction::sell(
             &keypair,
@@ -232,7 +223,16 @@ impl PumpFun {
             },
         );
 
+        let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
+
+        let tax_ix = transfer(
+            &keypair.pubkey(),
+            &Pubkey::from_str(ADMIN_PUBKEY).unwrap(), // Send to admin public key
+            tax_amount,
+        );
+
         instructions.push(sell_ix);
+        instructions.push(tax_ix);
 
         Ok(instructions)
     }
@@ -241,30 +241,24 @@ impl PumpFun {
     pub async fn sell_all_ix(
         &self, 
         mint: &Pubkey,
-        keypair: &Keypair, 
+        keypair: &Keypair,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
-
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint);
         let balance = self.rpc.get_token_account_balance(&ata).await?;
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
         let global_account = self.get_global_account().await?;
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
-        let min_sol_output = bonding_curve_account
-        .get_sell_price(balance_u64, global_account.fee_basis_points)
-        .map_err(pumpfun::error::ClientError::BondingCurveError)?;
+        
+        let min_sol = bonding_curve_account
+                  .get_sell_price(balance_u64, global_account.fee_basis_points)
+                  .map_err(pumpfun::error::ClientError::BondingCurveError)?;
+
         let min_sol_output = pumpfun::utils::calculate_with_slippage_sell(
-            min_sol_output,
+            min_sol,
             500,
         );
 
         let mut instructions: Vec<Instruction> = Vec::new();
-
-        // Set moderate priority fee to help transaction pass
-        let limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
-        instructions.push(limit_ix);
-
-        let price_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000); // 0.001 SOL per compute unit
-        instructions.push(price_ix);
         
         let sell_ix = instruction::sell(
             &keypair, 
@@ -276,8 +270,15 @@ impl PumpFun {
             },
         );
 
-        instructions.push(sell_ix);
+        let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
+        let tax_ix = transfer(
+            &keypair.pubkey(),
+            &Pubkey::from_str(ADMIN_PUBKEY).unwrap(), // Send to admin public key
+            tax_amount,
+        );
 
+        instructions.push(sell_ix);
+        instructions.push(tax_ix);
         Ok(instructions)
     }
 
@@ -358,7 +359,7 @@ impl PumpFun {
     pub async fn get_pool_information(&self, mint: &Pubkey) -> Result<PoolInformation, pumpfun::error::ClientError> {
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
         let current_mc = bonding_curve_account.get_market_cap_sol();
-        let sell_price = bonding_curve_account.get_sell_price(10000 * TOKEN_AMOUNT_MULTIPLIER, 500).unwrap(); // price per 10k tokens
+        let sell_price = bonding_curve_account.get_sell_price(100000 * TOKEN_AMOUNT_MULTIPLIER, 500).unwrap(); // price per 10k tokens
         let is_bonding_curve_complete = bonding_curve_account.complete;
         let reserve_sol = bonding_curve_account.real_sol_reserves;
         let reserve_token = bonding_curve_account.real_token_reserves;
