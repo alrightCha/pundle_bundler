@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::signature::Keypair;
 use solana_sdk::instruction::Instruction;
-use solana_sdk::pubkey::Pubkey;
 
 //Has requester public key, token metadata, dev buy amount and wallets buy amount
 #[derive(Deserialize)]

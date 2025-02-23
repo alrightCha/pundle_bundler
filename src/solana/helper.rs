@@ -1,13 +1,8 @@
-use solana_sdk::signer::Signer;
 use solana_sdk::{
-    instruction::Instruction,
-    transaction::VersionedTransaction,
-    address_lookup_table::AddressLookupTableAccount
+    address_lookup_table::AddressLookupTableAccount, compute_budget::ComputeBudgetInstruction, instruction::Instruction, pubkey::Pubkey, signer::Signer, transaction::VersionedTransaction
 };
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use crate::params::InstructionWithSigners;
 use solana_client::rpc_client::RpcClient;
-use std::collections::HashSet;
 use crate::solana::utils::build_transaction;
 
 fn get_priority_fee_ix() -> Instruction {
@@ -17,97 +12,71 @@ fn get_priority_fee_ix() -> Instruction {
     set_compute_unit_price_ix
 }
 
+/// Packs instructions into transactions while respecting Solana's limits with LUT
 pub fn pack_instructions(
     instructions: Vec<InstructionWithSigners>,
     client: &RpcClient,
     lut: &AddressLookupTableAccount,
-    max_tx_size: usize,
 ) -> Vec<VersionedTransaction> {
+    const MAX_TX_SIZE: usize = 1230;
+    let mut packed_txs: Vec<VersionedTransaction> = Vec::new();
+    let mut new_tx_ixs: InstructionWithSigners = InstructionWithSigners {
+        instructions: Vec::new(),
+        signers: Vec::new(),
+    };
 
-    let mut batches = Vec::new();
-    let mut current_batch = Vec::new();
-    let mut seen_pubkeys = HashSet::new();
-    let mut current_signers = Vec::new();
+    let fee_ix = get_priority_fee_ix();
+    let mut seen: Vec<Pubkey> = Vec::new();
+    new_tx_ixs.instructions.push(fee_ix);
 
-    for ix_with_signers in instructions {
-        // Create temp version for size checking
-        let mut temp_instructions = Vec::new();
-        let tip_ix = get_priority_fee_ix();
-        temp_instructions.push(&tip_ix);
-        let mut temp_signers = current_signers.clone();
-        let mut temp_seen = seen_pubkeys.clone();
+    for ix in instructions {
+        let signers = ix.signers;
+        let instructions = ix.instructions;
+        let mut mock_ixs = new_tx_ixs;
+        mock_ixs.instructions.extend(instructions.clone());
         
-        // Add new instructions
-        temp_instructions.extend(current_batch.iter().flat_map(|iw: &InstructionWithSigners| iw.instructions.iter()));
-        temp_instructions.extend(ix_with_signers.instructions.iter());
-
-        // Add new signers
-        for signer in &ix_with_signers.signers {
-            let pubkey = signer.pubkey();
-            if !temp_seen.contains(&pubkey) {
-                temp_signers.push(*signer);
-                temp_seen.insert(pubkey);
+        // Add new signers that haven't been seen
+        for signer in signers.iter() {
+            if !seen.contains(&signer.pubkey()) {
+                seen.push(signer.pubkey());
+                mock_ixs.signers.push(signer);
             }
         }
 
-        // Build test transaction
-        let tx = build_transaction(
-            client,
-            &temp_instructions.into_iter().map(|i| i.clone()).collect::<Vec<Instruction>>(),
-            temp_signers.clone(),
-            lut.clone()
-        );
+        let tx = build_transaction(&client, &mock_ixs.instructions, mock_ixs.signers.clone(), lut.clone());
+        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
 
-        if bincode::serialized_size(&tx).unwrap() as usize <= max_tx_size {
-            // Keep the added instruction
-            current_batch.push(ix_with_signers);
-            current_signers = temp_signers;
-            seen_pubkeys = temp_seen;
+        if size < MAX_TX_SIZE {
+            // If size is ok, update new_tx_ixs with the mock version
+            new_tx_ixs = mock_ixs;
         } else {
-            // Commit current batch if not empty
-            if !current_batch.is_empty() {
-                batches.push((current_batch, current_signers));
-                current_batch = Vec::new();
-                seen_pubkeys.clear();
-                current_signers = Vec::new();
+            // If size would be too large, pack current tx and start a new one
+            if !instructions.is_empty() {
+                let tx = build_transaction(&client, &instructions, signers.clone(), lut.clone());
+                packed_txs.push(tx);
             }
 
-            // Check if single instruction fits
-            let tx = build_transaction(
-                client,
-                &ix_with_signers.instructions,
-                ix_with_signers.signers.iter().copied().collect(),
-                lut.clone()
-            );
-            
-            if bincode::serialized_size(&tx).unwrap() as usize > max_tx_size {
-                panic!("Single instruction exceeds size limit");
-            }
-            
-            // Add to new batch
-            current_batch.push(ix_with_signers);
-            for signer in &current_batch.last().unwrap().signers {
-                let pubkey = signer.pubkey();
-                if !seen_pubkeys.contains(&pubkey) {
-                    current_signers.push(*signer);
-                    seen_pubkeys.insert(pubkey);
-                }
+            // Start new transaction with current instruction
+            new_tx_ixs = InstructionWithSigners {
+                instructions: vec![get_priority_fee_ix()],
+                signers: Vec::new(),
+            };
+            seen = Vec::new();
+
+            // Add current instruction to new transaction
+            new_tx_ixs.instructions.extend(instructions);
+            for signer in signers.clone().iter() {
+                seen.push(signer.pubkey());
+                new_tx_ixs.signers.push(signer);
             }
         }
     }
 
-    // Add final batch
-    if !current_batch.is_empty() {
-        batches.push((current_batch, current_signers));
+    // Pack any remaining instructions into a final transaction
+    if !new_tx_ixs.instructions.is_empty() {
+        let tx = build_transaction(&client, &new_tx_ixs.instructions, new_tx_ixs.signers.clone(), lut.clone());
+        packed_txs.push(tx);
     }
 
-    // Convert to transactions
-    batches.into_iter().map(|(batch, signers)| {
-        let instructions: Vec<Instruction> = batch.iter()
-            .flat_map(|iw| iw.instructions.iter())
-            .cloned()
-            .collect();
-
-        build_transaction(client, &instructions, signers, lut.clone())
-    }).collect()
+    packed_txs
 }

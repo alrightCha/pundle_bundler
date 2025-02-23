@@ -6,7 +6,7 @@ pub const RPC_URL: &str = "https://mainnet.helius-rpc.com/?api-key=9291504f-fedf
 pub const ORCHESTRATOR_URL: &str = "http://localhost:3001/bundled";
 pub const ADMIN_PUBKEY: &str = "FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH";
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
-pub const JITO_TIP_AMOUNT: u64 = 2_000_000;
+pub const JITO_TIP_AMOUNT: u64 = 12_000_000;
 pub const MAX_RETRIES: u32 = 30;
 pub const FEE_AMOUNT: u64 = 10_000;
 pub const BUFFER_AMOUNT: u64 = 10_000_000;

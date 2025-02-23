@@ -133,7 +133,7 @@ pub async fn process_bundle(
     let _ = jito.one_tx_bundle(tx).await.unwrap();
 
     let mut dev_balance = 0;
-    
+
     while dev_balance == 0 {
         dev_balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
         println!("Waiting for dev balance to be funded... Current balance: {}", dev_balance);
@@ -234,12 +234,12 @@ pub async fn process_bundle(
 
     //Step 7: Bundle instructions into transactions
     
-    let packed_txs = pack_instructions(bundle_ixs, &client, &address_lookup_table_account, 1232);
+    let packed_txs = pack_instructions(bundle_ixs, &client, &address_lookup_table_account);
 
     let config = RpcSimulateTransactionConfig {
         sig_verify: true,
         replace_recent_blockhash: false, // Disable blockhash replacement
-        commitment: Some(CommitmentConfig::confirmed()),
+        commitment: Some(CommitmentConfig::finalized()),
         ..Default::default()
     };
 

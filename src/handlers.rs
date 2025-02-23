@@ -327,7 +327,7 @@ impl HandlerManager {
                     addresses: address_lookup_table.addresses.to_vec(),
                 };
 
-                let txs = pack_instructions(instructions, &client, &address_lookup_table_account, 1232);
+                let txs = pack_instructions(instructions, &client, &address_lookup_table_account);
                 txs
             }
             None => {
