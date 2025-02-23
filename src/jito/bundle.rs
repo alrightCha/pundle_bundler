@@ -1,6 +1,5 @@
 use std::{
     sync::Arc,
-    collections::HashMap,
     env
 };
 use dotenv::dotenv;
@@ -8,26 +7,23 @@ use tokio::time::Duration;
 use reqwest::Client as HttpClient;
 
 use solana_sdk::{
-    pubkey::Pubkey,
-    transaction::VersionedTransaction,
-    rent::Rent,
-    signature::{Keypair, Signer},
-    address_lookup_table::AddressLookupTableAccount,
-    instruction::Instruction,
+    account::Account, address_lookup_table::AddressLookupTableAccount, instruction::Instruction, pubkey::Pubkey, rent::Rent, signature::{Keypair, Signer}
 };
 
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
 
-
-use crate::jito::jito::JitoBundle;
+use crate::{jito::jito::JitoBundle, params::InstructionWithSigners};
 use crate::pumpfun::pump::PumpFun;
 use crate::config::{RPC_URL, FEE_AMOUNT, BUFFER_AMOUNT, JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL};
 use crate::params::{CreateTokenMetadata, KeypairWithAmount};
 use crate::solana::{
     utils::{load_keypair, transfer_ix, build_transaction}, 
     lut::{create_lut, extend_lut, verify_lut_ready},
-    helper::pack_instructions,
 };
+use crate::solana::helper::pack_instructions;
+use solana_client::rpc_config::RpcSimulateTransactionConfig;
+use solana_sdk::commitment_config::CommitmentConfig;
 
 pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -53,6 +49,8 @@ pub async fn process_bundle(
 
     let loaded_dev_keypair = load_keypair(&dev_keypair_path).unwrap();
 
+    let clone_dev_keypair = load_keypair(&dev_keypair_path).unwrap();
+
     let payer: Arc<Keypair> = Arc::new(loaded_dev_keypair);
     let mut pumpfun_client = PumpFun::new(payer);
     println!("Creating lut with admin public key:  {}", admin_kp.pubkey());
@@ -63,10 +61,15 @@ pub async fn process_bundle(
 
     let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) = create_lut(&client, &admin_kp).unwrap();
 
+    let lut_pubkey = lut.0;
+
     let mut retries = 5;
     while retries > 0 {
         match verify_lut_ready(&client, &lut.0) {
-            Ok(true) => break,
+            Ok(true) => {
+                println!("LUT is ready");
+                break;
+            },
             Ok(false) => {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 retries -= 1;
@@ -82,8 +85,17 @@ pub async fn process_bundle(
         return Err("LUT not ready after maximum retries".into());
     }
 
+    let mut pubkeys_for_lut: Vec<Pubkey> = Vec::new();
+
+    pubkeys_for_lut.push(admin_kp.pubkey());
+    pubkeys_for_lut.push(mint.pubkey());
+    pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
+
+    let rest_pbks: Vec<Pubkey> = keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect();
+    pubkeys_for_lut.extend(rest_pbks);
+
     //Extend lut with addresses 
-    let extended_lut = extend_lut(&client, &admin_kp, lut.0, &keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect::<Vec<Pubkey>>()).unwrap();
+    let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
 
 
     println!("LUT extended with addresses: {:?}", extended_lut);
@@ -95,63 +107,58 @@ pub async fn process_bundle(
     let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
 
     //Instructions to send sol from admin to dev + keypairs 
-    let mut instructions = admin_to_keypair_ixs;
-    instructions.extend([admin_to_dev_ix, jito_tip_ix]);
+    let mut instructions: Vec<Instruction> = vec![admin_to_dev_ix];
+    instructions.extend(admin_to_keypair_ixs);
+    instructions.push(jito_tip_ix);
     
     println!("LUT address: {:?}", lut.0);
     println!("Addresses: {:?}", keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect::<Vec<Pubkey>>());
 
-    let final_lut = AddressLookupTableAccount {
-        key: lut.0,
-        addresses: keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect(),
+    let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
+    let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+
+    println!("Address lookup table: {:?}", address_lookup_table);
+
+    let address_lookup_table_account = AddressLookupTableAccount {
+        key: lut_pubkey,
+        addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let tx = build_transaction(&client, &instructions, vec![&admin_kp], final_lut);
-    
+    let tx = build_transaction(&client, &instructions, vec![&admin_kp], address_lookup_table_account.clone());
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
     //Sending transaction to fund wallets from admin. 
     //TODO: Check if this is complete. might require tip instruction, signature to tx, and confirmation that bundle is complete
     let _ = jito.one_tx_bundle(tx).await.unwrap();
+
+    let mut dev_balance = 0;
     
-    //Close lut - TODO add as side job to diminish waiting time for the user 
-    //close_lut(&client, &self.admin_kp, lut.0);
-
+    while dev_balance == 0 {
+        dev_balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+        println!("Waiting for dev balance to be funded... Current balance: {}", dev_balance);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    println!("Dev wallet funded successfully with {} lamports", dev_balance);
     
-    //Step 4: Create and extend lut for the bundle 
+    let other_balances = keypairs_with_amount.iter().map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap()).collect::<Vec<u64>>();
+    println!("Other balances: {:?}", other_balances);
 
-    let bundle_lut = create_lut(&client, &dev_keypair_with_amount.keypair).unwrap();
-    let bundle_lut_pubkey = bundle_lut.0;
-    let _ = extend_lut(&client, &dev_keypair_with_amount.keypair, bundle_lut.0, &keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect::<Vec<Pubkey>>()).unwrap(); 
-
-     // Verify LUT is ready before using
-    let mut retries = 5;
-    while retries > 0 {
-        if verify_lut_ready(&client, &bundle_lut.0).unwrap(){
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        retries -= 1;
-    }
-
-    if retries == 0 {
-       println!("LUT not ready after maximum retries");
-    }
-
-    let final_bundle_lut = AddressLookupTableAccount {
-        key: bundle_lut.0,
-        addresses: keypairs_with_amount.iter().map(|keypair| keypair.keypair.pubkey()).collect(),
-    };
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction 
 
-    let mut instructions: Vec<Instruction> = Vec::new();
+    let mut bundle_ixs: Vec<InstructionWithSigners> = Vec::new();
+
     println!("Mint keypair: {:?}", mint.pubkey());
 
     let mint_ix = pumpfun_client.create_instruction(&mint, token_metadata).await.unwrap();
 
-    instructions.push(mint_ix);
+    let mint_ix_with_signers = InstructionWithSigners {
+        instructions: vec![mint_ix],
+        signers: vec![&mint, &clone_dev_keypair], //No need for dev keypair because it will be added in the next step anyway 
+    };
+
+    bundle_ixs.push(mint_ix_with_signers);
 
     //calculating the max amount of lamports to buy with 
     let rent = Rent::default();
@@ -166,6 +173,7 @@ pub async fn process_bundle(
     println!("Final dev buy amount: {:?}", final_dev_buy_amount);
 
     let balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+
     if balance > to_sub_for_dev {
         let dev_buy_ixs = pumpfun_client.buy_ixs(
             &mint.pubkey(),
@@ -175,8 +183,13 @@ pub async fn process_bundle(
             )
             .await
             .unwrap();
-    
-        instructions.extend(dev_buy_ixs);
+
+        let dev_buy_ixs_with_signers = InstructionWithSigners {
+            instructions: dev_buy_ixs,
+            signers: vec![&clone_dev_keypair],
+        };
+
+        bundle_ixs.push(dev_buy_ixs_with_signers);
     }else{
         println!("Dev keypair has insufficient balance. Skipping buy.");
     }
@@ -200,59 +213,58 @@ pub async fn process_bundle(
             .await
             .unwrap();
 
-        instructions.extend(buy_ixs);
+        let buy_ixs_with_signers = InstructionWithSigners {
+            instructions: buy_ixs,
+            signers: vec![&keypair.keypair],
+        };
+
+        bundle_ixs.push(buy_ixs_with_signers);
     }
 
     //Step 6: Prepare tip instruction 
 
     let jito_tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
-    instructions.push(jito_tip_ix);
+
+    let jito_tip_ix_with_signers = InstructionWithSigners {
+        instructions: vec![jito_tip_ix],
+        signers: vec![&clone_dev_keypair], // Include the dev keypair as the signer
+    };
+
+    bundle_ixs.push(jito_tip_ix_with_signers);
+
     //Step 7: Bundle instructions into transactions
     
-    let packed_txs = pack_instructions(instructions, &final_bundle_lut);
-    println!("Packed transactions: {:?}", packed_txs.len());
-    println!("Packed transactions. Needed keypairs for: {:?}", packed_txs[0].signers);
-    println!("Packed transactions. Needed accounts for: {:?}", packed_txs[0].accounts);
+    let packed_txs = pack_instructions(bundle_ixs, &client, &address_lookup_table_account, 1232);
 
-    let mut transactions: Vec<VersionedTransaction> = Vec::new();
-    // Create a map of pubkey to keypair for all possible signers
-    let mut signers_map: HashMap<Pubkey, &Keypair> = HashMap::new();
+    let config = RpcSimulateTransactionConfig {
+        sig_verify: true,
+        replace_recent_blockhash: false, // Disable blockhash replacement
+        commitment: Some(CommitmentConfig::confirmed()),
+        ..Default::default()
+    };
 
-    signers_map.insert(dev_keypair_with_amount.keypair.pubkey(), &dev_keypair_with_amount.keypair);
-
-    for keypair in &keypairs_with_amount {
-        signers_map.insert(keypair.keypair.pubkey(), &keypair.keypair);
-    }
-    
-    signers_map.insert(mint.pubkey(), &mint);
-
-    // Process each packed transaction
-    for packed_tx in packed_txs {
-        // Collect required signers' keypairs
-        let mut tx_signers = Vec::new();
-        for required_signer in &packed_tx.signers {
-            if let Some(kp) = signers_map.get(required_signer) {
-                println!("Adding signer: {:?}", kp.pubkey());
-                tx_signers.push(*kp);
-            } else {
-                println!("Missing keypair for required signer: {:?}", required_signer);
-                return Err("Missing required signer keypair".into());
+    for (i, tx) in packed_txs.iter().enumerate() {
+        println!("Simulating transaction {}", i);
+        match client.simulate_transaction_with_config(tx, config.clone()) {
+            Ok(sim_result) => {
+                if let Some(err) = sim_result.value.err {
+                    eprintln!("❌ Transaction {} failed simulation: {:?}", i, err);
+                } else {
+                    println!("✅ Transaction {} simulation successful", i);
+                }
+            }
+            Err(e) => {
+                eprintln!("🚨 Transaction {} simulation error: {:?}", i, e);
             }
         }
-        println!("Signers: {:?}", tx_signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
-        // Build the transaction with the collected signers
-        let tx = build_transaction(
-            &client,
-            &packed_tx.instructions,
-            tx_signers,
-            final_bundle_lut.clone(),
-        );
-        transactions.push(tx);
     }
+
+    println!("Packed txs count: {:?}", packed_txs.len());
 
     // Send the bundle....
     println!("Attempting to submit bundle...");
-    match jito.submit_bundle(transactions).await {
+
+    match jito.submit_bundle(packed_txs).await {
         Ok(_) => println!("Bundle submitted successfully"),
         Err(e) => {
             eprintln!("Failed to submit bundle: {:?}", e);
@@ -278,6 +290,6 @@ pub async fn process_bundle(
     });
 
     println!("Bundle completed");
-    println!("Bundle lut: {:?}", bundle_lut_pubkey);
-    Ok(bundle_lut_pubkey)
+    println!("Bundle lut: {:?}", lut_pubkey);
+    Ok(lut_pubkey)
 }

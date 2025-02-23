@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::signature::Keypair;
+use solana_sdk::instruction::Instruction;
+use solana_sdk::pubkey::Pubkey;
+
 //Has requester public key, token metadata, dev buy amount and wallets buy amount
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,4 +118,10 @@ pub struct RecursivePayRequest {
 #[derive(Serialize)]
 pub struct RecursivePayResponse {
     pub signatures: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct InstructionWithSigners<'a> {
+    pub instructions: Vec<Instruction>,
+    pub signers: Vec<&'a Keypair>,
 }

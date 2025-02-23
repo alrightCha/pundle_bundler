@@ -12,7 +12,6 @@ use std::str::FromStr;
 use serde_json::json;use base64::{Engine as _, engine::general_purpose};
 use tokio::time::{sleep, Duration};
 use super::utils::check_final_bundle_status;
-use std::error::Error;
 
 
 pub struct JitoBundle {
@@ -54,6 +53,8 @@ impl JitoBundle {
     //Requires that transaction is already signed 
     pub async fn one_tx_bundle(&self, transaction: VersionedTransaction) -> Result<()> {
         let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction)?);
+        let serialized_tx_size = serialized_tx.len();
+        println!("Transaction size in bytes: {}", serialized_tx_size);
         // Send transaction using Jito SDK
         println!("Sending transaction...");
         let params = json!({

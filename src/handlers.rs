@@ -14,6 +14,7 @@ use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::commitment_config::CommitmentLevel;
 
+use crate::params::InstructionWithSigners;
 use crate::params::{
     CreateTokenMetadata,
     GetPoolInformationRequest, 
@@ -45,10 +46,10 @@ use crate::params::{
 //My crates 
 use crate::jito::jito::JitoBundle;
 use crate::solana::grind::grind;
-use crate::solana::utils::{create_keypair, build_transaction, load_keypair, get_keypairs_for_pubkey};
+use crate::solana::utils::{create_keypair, load_keypair, get_keypairs_for_pubkey};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, TOKEN_AMOUNT_MULTIPLIER};
-use crate::solana::helper::pack_instructions;
 use crate::jito::bundle::process_bundle;
+use crate::solana::helper::pack_instructions;
 use std::collections::HashMap;
 use solana_sdk::address_lookup_table::AddressLookupTableAccount;
 
@@ -290,47 +291,44 @@ impl HandlerManager {
 
         let keypairs_no_mint: Vec<Keypair> = keypairs.iter().filter(|kp| kp.pubkey() != mint_pubkey).map(|kp| kp.insecure_clone()).collect();
 
-        keypairs.push(loaded_admin_kp);
+        keypairs.push(loaded_admin_kp.insecure_clone());
         
-        let mut instructions: Vec<Instruction> = Vec::new();
+        let mut instructions: Vec<InstructionWithSigners> = Vec::new();
 
-        for keypair in keypairs_no_mint {
+        for keypair in keypairs_no_mint.iter() {
             let sell_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
-            instructions.extend(sell_ixs);
+            // Clone the keypair and store it in the struct
+            let sell_ixs_with_signers = InstructionWithSigners {
+                instructions: sell_ixs,
+                signers: vec![&keypair], // Store owned Keypair instead of reference
+            };
+
+            instructions.push(sell_ixs_with_signers);
         }
 
         let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
-        instructions.push(jito_tip_ix);
+
+        let jito_tip_ix_with_signers = InstructionWithSigners {
+            instructions: vec![jito_tip_ix],
+            signers: vec![],
+        };
+
+        instructions.push(jito_tip_ix_with_signers);
 
         let unlocked_lut = pubkey_to_lut.lock().await;
         let lut_account_pubkey = unlocked_lut.get(&mint);
         let txs: Vec<VersionedTransaction> = match lut_account_pubkey {
             Some(lut_pubkey) => {
                 println!("LUT pubkey FOUND ! : {:?}", lut_pubkey);
-                let mut transactions: Vec<VersionedTransaction> = Vec::new();
                 let raw_account = client.get_account(&lut_pubkey).unwrap();
                 let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
                 let address_lookup_table_account = AddressLookupTableAccount {
                     key: *lut_pubkey,
                     addresses: address_lookup_table.addresses.to_vec(),
                 };
-                let packed_ixs = pack_instructions(instructions, &address_lookup_table_account);
 
-                for ix in packed_ixs {
-                    let mut tx_signers = Vec::new();
-                    for required_signer in &ix.signers {
-                        match keypairs.iter().find(|kp| kp.pubkey() == *required_signer) {
-                            Some(kp) => tx_signers.push(kp),
-                            None => {
-                                eprintln!("Missing keypair for signer: {}", required_signer);
-                            }
-                        }
-                    }
-
-                    let tx = build_transaction(&client, &ix.instructions, tx_signers, address_lookup_table_account.clone());
-                    transactions.push(tx);
-                }
-                transactions
+                let txs = pack_instructions(instructions, &client, &address_lookup_table_account, 1232);
+                txs
             }
             None => {
                 println!("LUT pubkey NOT FOUND !");

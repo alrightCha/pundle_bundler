@@ -1,118 +1,113 @@
+use solana_sdk::signer::Signer;
 use solana_sdk::{
     instruction::Instruction,
-    pubkey::Pubkey,
-    address_lookup_table::AddressLookupTableAccount,
-    compute_budget::ComputeBudgetInstruction,
+    transaction::VersionedTransaction,
+    address_lookup_table::AddressLookupTableAccount
 };
-use std::collections::{HashMap, HashSet};
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use crate::params::InstructionWithSigners;
+use solana_client::rpc_client::RpcClient;
+use std::collections::HashSet;
+use crate::solana::utils::build_transaction;
 
-#[derive(Debug)]
-pub struct PackedTransaction {
-    pub instructions: Vec<Instruction>,
-    pub signers: HashSet<Pubkey>, 
-    pub accounts: HashMap<Pubkey, bool>, // Tracks non-LUT accounts and their writable status       // Tracks required signers for the transaction
-    estimated_size: usize,
-}
-
-fn initialize_tx() -> PackedTransaction {
-    const BASE_TX_SIZE: usize = 64 + 3; // Signature (1 signer) + message header
-    const PRIORITY_FEE_IX_SIZE: usize = 9; // Size of priority fee instruction (1 + 0 accounts + 8 bytes data)
-
-    let mut tx = PackedTransaction {
-        instructions: Vec::new(),
-        accounts: HashMap::new(),
-        signers: HashSet::new(),
-        estimated_size: BASE_TX_SIZE + PRIORITY_FEE_IX_SIZE,
-    };
-
-    let priority_fee_amount = 200_000; // 0.000007 SOL
+fn get_priority_fee_ix() -> Instruction {
+    let priority_fee_amount = 2_000_000; // 0.000007 SOL
     // Create priority fee instruction
     let set_compute_unit_price_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-    tx.instructions.push(set_compute_unit_price_ix);
-
-    tx
+    set_compute_unit_price_ix
 }
 
-/// Packs instructions into transactions while respecting Solana's limits with LUT
 pub fn pack_instructions(
-    instructions: Vec<Instruction>,
+    instructions: Vec<InstructionWithSigners>,
+    client: &RpcClient,
     lut: &AddressLookupTableAccount,
-) -> Vec<PackedTransaction> {
-    const MAX_ACCOUNTS_PER_TX: usize = 256;
-    const MAX_TX_SIZE: usize = 1100; // 1232 is the max size of a transaction, but using less to be safe
+    max_tx_size: usize,
+) -> Vec<VersionedTransaction> {
 
-    let lut_addresses: HashSet<Pubkey> = lut.addresses.iter().cloned().collect();
-    let mut packed_txs = Vec::new();
-    let mut current_tx = initialize_tx();
+    let mut batches = Vec::new();
+    let mut current_batch = Vec::new();
+    let mut seen_pubkeys = HashSet::new();
+    let mut current_signers = Vec::new();
 
-    for ix in instructions {
-        let mut new_accounts = HashMap::new();
-        let mut additional_size = 0;
-        let mut new_signers = HashSet::new();
+    for ix_with_signers in instructions {
+        // Create temp version for size checking
+        let mut temp_instructions = Vec::new();
+        let tip_ix = get_priority_fee_ix();
+        temp_instructions.push(&tip_ix);
+        let mut temp_signers = current_signers.clone();
+        let mut temp_seen = seen_pubkeys.clone();
+        
+        // Add new instructions
+        temp_instructions.extend(current_batch.iter().flat_map(|iw: &InstructionWithSigners| iw.instructions.iter()));
+        temp_instructions.extend(ix_with_signers.instructions.iter());
 
-        // Check program ID
-        if !lut_addresses.contains(&ix.program_id) {
-            if !current_tx.accounts.contains_key(&ix.program_id) {
-                additional_size += 32;
-                new_accounts.insert(ix.program_id, false); // Program ID is readonly
+        // Add new signers
+        for signer in &ix_with_signers.signers {
+            let pubkey = signer.pubkey();
+            if !temp_seen.contains(&pubkey) {
+                temp_signers.push(*signer);
+                temp_seen.insert(pubkey);
             }
         }
 
-        // Check instruction accounts
-        for account in &ix.accounts {
-            let pubkey = account.pubkey;
-            println!("Account: {:?} is signer : {:?}", pubkey, account.is_signer);
-            // Track if account is a signer
-            if account.is_signer {
-                new_signers.insert(pubkey);
+        // Build test transaction
+        let tx = build_transaction(
+            client,
+            &temp_instructions.into_iter().map(|i| i.clone()).collect::<Vec<Instruction>>(),
+            temp_signers.clone(),
+            lut.clone()
+        );
+
+        if bincode::serialized_size(&tx).unwrap() as usize <= max_tx_size {
+            // Keep the added instruction
+            current_batch.push(ix_with_signers);
+            current_signers = temp_signers;
+            seen_pubkeys = temp_seen;
+        } else {
+            // Commit current batch if not empty
+            if !current_batch.is_empty() {
+                batches.push((current_batch, current_signers));
+                current_batch = Vec::new();
+                seen_pubkeys.clear();
+                current_signers = Vec::new();
             }
 
-            if lut_addresses.contains(&pubkey) {
-                continue;
+            // Check if single instruction fits
+            let tx = build_transaction(
+                client,
+                &ix_with_signers.instructions,
+                ix_with_signers.signers.iter().copied().collect(),
+                lut.clone()
+            );
+            
+            if bincode::serialized_size(&tx).unwrap() as usize > max_tx_size {
+                panic!("Single instruction exceeds size limit");
             }
-
-            let is_writable = account.is_writable;
-            if let Some(current_writable) = current_tx.accounts.get(&pubkey) {
-                if !current_writable && is_writable {
-                    new_accounts.insert(pubkey, true);
+            
+            // Add to new batch
+            current_batch.push(ix_with_signers);
+            for signer in &current_batch.last().unwrap().signers {
+                let pubkey = signer.pubkey();
+                if !seen_pubkeys.contains(&pubkey) {
+                    current_signers.push(*signer);
+                    seen_pubkeys.insert(pubkey);
                 }
-            } else {
-                additional_size += 32;
-                new_accounts.insert(pubkey, is_writable);
             }
-        }
-
-        // Calculate the number of new signers and additional signature size
-        let existing_signers_count = current_tx.signers.len();
-        current_tx.signers.extend(new_signers);
-        let new_signers_count = current_tx.signers.len() - existing_signers_count;
-        additional_size += new_signers_count * 64;
-
-        // Calculate instruction size: program index + account indexes + data
-        let ix_size = 1 + ix.accounts.len() + ix.data.len();
-        let total_accounts = current_tx.accounts.len() + new_accounts.len();
-
-        // Check if adding this instruction exceeds limits
-        if current_tx.estimated_size + additional_size + ix_size > MAX_TX_SIZE ||
-           total_accounts > MAX_ACCOUNTS_PER_TX {
-            if !current_tx.instructions.is_empty() {
-                packed_txs.push(current_tx);
-                current_tx = initialize_tx();
-            }
-            // Re-evaluate adding the instruction to a new transaction
-        }
-
-        // Add the instruction and update accounts
-        current_tx.instructions.push(ix);
-        current_tx.estimated_size += additional_size + ix_size;
-        for (pubkey, is_writable) in new_accounts {
-            current_tx.accounts.insert(pubkey, is_writable);
         }
     }
 
-    if !current_tx.instructions.is_empty() {
-        packed_txs.push(current_tx);
+    // Add final batch
+    if !current_batch.is_empty() {
+        batches.push((current_batch, current_signers));
     }
 
-    packed_txs
+    // Convert to transactions
+    batches.into_iter().map(|(batch, signers)| {
+        let instructions: Vec<Instruction> = batch.iter()
+            .flat_map(|iw| iw.instructions.iter())
+            .cloned()
+            .collect();
+
+        build_transaction(client, &instructions, signers, lut.clone())
+    }).collect()
 }

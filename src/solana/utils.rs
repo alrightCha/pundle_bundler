@@ -1,3 +1,4 @@
+
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
     hash::Hash, 
@@ -9,6 +10,7 @@ use solana_sdk::{
     transaction::VersionedTransaction,
     system_instruction
 };
+
 use solana_client::rpc_client::RpcClient;
 use std::result::Result::Ok;
 use anyhow::Result;
@@ -117,8 +119,7 @@ pub fn build_transaction(
     let signers: Vec<&Keypair> = keypairs.iter().map(|kp| *kp).collect();
     println!("Signers: {:?}", signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
     // Create the transaction with all keypairs as signers
-    let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
-
+    let tx: VersionedTransaction = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
     tx
 }
 
