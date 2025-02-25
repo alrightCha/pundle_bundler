@@ -1,4 +1,3 @@
-
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
     hash::Hash, 
@@ -99,8 +98,19 @@ pub fn build_transaction(
         panic!("At least one keypair is required to build a transaction.");
     }
 
-    // Use the first keypair as the payer
-    let payer = keypairs[0];
+    // Find first keypair with balance > 0.02 SOL
+    let min_balance = 20_000_000; // 0.02 SOL in lamports
+    
+    let payer = keypairs.iter()
+        .find(|kp| {
+            match client.get_balance(&kp.pubkey()) {
+                Ok(balance) => balance >= min_balance,
+                Err(_) => false
+            }
+        })
+        .unwrap_or_else(|| {
+            panic!("No keypair found with sufficient balance (>0.02 SOL)")
+        });
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
     
@@ -111,6 +121,11 @@ pub fn build_transaction(
         blockhash,
     ).unwrap();
     
+    println!("Message required signers: {:?}", message.account_keys.iter()
+        .enumerate()  // Add this to get index
+        .filter(|(i, _)| message.is_maybe_writable(*i))  // Use index instead of Pubkey
+        .map(|(_, key)| key)  // Map back to just the keys
+        .collect::<Vec<&Pubkey>>());
     // Compile the message with the payer's public key
     
     let versioned_message = VersionedMessage::V0(message);

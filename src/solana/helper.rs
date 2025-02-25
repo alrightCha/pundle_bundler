@@ -1,81 +1,118 @@
 use solana_sdk::{
-    address_lookup_table::AddressLookupTableAccount, compute_budget::ComputeBudgetInstruction, instruction::Instruction, pubkey::Pubkey, signer::Signer, transaction::VersionedTransaction
+    instruction::Instruction,
+    pubkey::Pubkey,
+    address_lookup_table::AddressLookupTableAccount,
+    compute_budget::ComputeBudgetInstruction,
 };
-use crate::params::InstructionWithSigners;
-use solana_client::rpc_client::RpcClient;
-use crate::solana::utils::build_transaction;
+use std::collections::{HashMap, HashSet};
 
-fn get_priority_fee_ix() -> Instruction {
-    let priority_fee_amount = 2_000_000; // 0.000007 SOL
+#[derive(Debug)]
+pub struct PackedTransaction {
+    pub instructions: Vec<Instruction>,
+    pub signers: HashSet<Pubkey>, 
+    pub accounts: HashMap<Pubkey, bool>, // Tracks non-LUT accounts and their writable status       // Tracks required signers for the transaction
+    estimated_size: usize,
+}
+
+fn initialize_tx() -> PackedTransaction {
+    const BASE_TX_SIZE: usize = 64 + 3; // Signature (1 signer) + message header
+    const PRIORITY_FEE_IX_SIZE: usize = 9; // Size of priority fee instruction (1 + 0 accounts + 8 bytes data)
+
+    let mut tx = PackedTransaction {
+        instructions: Vec::new(),
+        accounts: HashMap::new(),
+        signers: HashSet::new(),
+        estimated_size: BASE_TX_SIZE + PRIORITY_FEE_IX_SIZE,
+    };
+
+    let priority_fee_amount = 200_000; // 0.000007 SOL
     // Create priority fee instruction
     let set_compute_unit_price_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-    set_compute_unit_price_ix
+    tx.instructions.push(set_compute_unit_price_ix);
+
+    tx
 }
 
 /// Packs instructions into transactions while respecting Solana's limits with LUT
 pub fn pack_instructions(
-    instructions: Vec<InstructionWithSigners>,
-    client: &RpcClient,
+    instructions: Vec<Instruction>,
     lut: &AddressLookupTableAccount,
-) -> Vec<VersionedTransaction> {
-    const MAX_TX_SIZE: usize = 1230;
-    let mut packed_txs: Vec<VersionedTransaction> = Vec::new();
-    let mut new_tx_ixs: InstructionWithSigners = InstructionWithSigners {
-        instructions: Vec::new(),
-        signers: Vec::new(),
-    };
+) -> Vec<PackedTransaction> {
+    const MAX_ACCOUNTS_PER_TX: usize = 256;
+    const MAX_TX_SIZE: usize = 1100; // 1232 is the max size of a transaction, but using less to be safe
 
-    let fee_ix = get_priority_fee_ix();
-    let mut seen: Vec<Pubkey> = Vec::new();
-    new_tx_ixs.instructions.push(fee_ix);
+    let lut_addresses: HashSet<Pubkey> = lut.addresses.iter().cloned().collect();
+    let mut packed_txs = Vec::new();
+    let mut current_tx = initialize_tx();
 
     for ix in instructions {
-        let signers = ix.signers;
-        let instructions = ix.instructions;
-        let mut mock_ixs = new_tx_ixs;
-        mock_ixs.instructions.extend(instructions.clone());
-        
-        // Add new signers that haven't been seen
-        for signer in signers.iter() {
-            if !seen.contains(&signer.pubkey()) {
-                seen.push(signer.pubkey());
-                mock_ixs.signers.push(signer);
+        let mut new_accounts = HashMap::new();
+        let mut additional_size = 0;
+        let mut new_signers = HashSet::new();
+
+        // Check program ID
+        if !lut_addresses.contains(&ix.program_id) {
+            if !current_tx.accounts.contains_key(&ix.program_id) {
+                additional_size += 32;
+                new_accounts.insert(ix.program_id, false); // Program ID is readonly
             }
         }
 
-        let tx = build_transaction(&client, &mock_ixs.instructions, mock_ixs.signers.clone(), lut.clone());
-        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-
-        if size < MAX_TX_SIZE {
-            // If size is ok, update new_tx_ixs with the mock version
-            new_tx_ixs = mock_ixs;
-        } else {
-            // If size would be too large, pack current tx and start a new one
-            if !instructions.is_empty() {
-                let tx = build_transaction(&client, &instructions, signers.clone(), lut.clone());
-                packed_txs.push(tx);
+        // Check instruction accounts
+        for account in &ix.accounts {
+            let pubkey = account.pubkey;
+            println!("Account: {:?} is signer : {:?}", pubkey, account.is_signer);
+            // Track if account is a signer
+            if account.is_signer {
+                new_signers.insert(pubkey);
             }
 
-            // Start new transaction with current instruction
-            new_tx_ixs = InstructionWithSigners {
-                instructions: vec![get_priority_fee_ix()],
-                signers: Vec::new(),
-            };
-            seen = Vec::new();
-
-            // Add current instruction to new transaction
-            new_tx_ixs.instructions.extend(instructions);
-            for signer in signers.clone().iter() {
-                seen.push(signer.pubkey());
-                new_tx_ixs.signers.push(signer);
+            if lut_addresses.contains(&pubkey) {
+                continue;
             }
+
+            let is_writable = account.is_writable;
+            if let Some(current_writable) = current_tx.accounts.get(&pubkey) {
+                if !current_writable && is_writable {
+                    new_accounts.insert(pubkey, true);
+                }
+            } else {
+                additional_size += 32;
+                new_accounts.insert(pubkey, is_writable);
+            }
+        }
+
+        // Calculate the number of new signers and additional signature size
+        let existing_signers_count = current_tx.signers.len();
+        current_tx.signers.extend(new_signers);
+        let new_signers_count = current_tx.signers.len() - existing_signers_count;
+        additional_size += new_signers_count * 64;
+
+        // Calculate instruction size: program index + account indexes + data
+        let ix_size = 1 + ix.accounts.len() + ix.data.len();
+        let total_accounts = current_tx.accounts.len() + new_accounts.len();
+
+        // Check if adding this instruction exceeds limits
+        if current_tx.estimated_size + additional_size + ix_size > MAX_TX_SIZE ||
+           total_accounts > MAX_ACCOUNTS_PER_TX {
+            if !current_tx.instructions.is_empty() {
+
+                packed_txs.push(current_tx);
+                current_tx = initialize_tx();
+            }
+            // Re-evaluate adding the instruction to a new transaction
+        }
+
+        // Add the instruction and update accounts
+        current_tx.instructions.push(ix);
+        current_tx.estimated_size += additional_size + ix_size;
+        for (pubkey, is_writable) in new_accounts {
+            current_tx.accounts.insert(pubkey, is_writable);
         }
     }
 
-    // Pack any remaining instructions into a final transaction
-    if !new_tx_ixs.instructions.is_empty() {
-        let tx = build_transaction(&client, &new_tx_ixs.instructions, new_tx_ixs.signers.clone(), lut.clone());
-        packed_txs.push(tx);
+    if !current_tx.instructions.is_empty() {
+        packed_txs.push(current_tx);
     }
 
     packed_txs

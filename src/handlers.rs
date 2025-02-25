@@ -13,8 +13,9 @@ use solana_sdk::address_lookup_table::state::AddressLookupTable;
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::commitment_config::CommitmentLevel;
+use std::collections::HashSet;
+use std::time::Duration;
 
-use crate::params::InstructionWithSigners;
 use crate::params::{
     CreateTokenMetadata,
     GetPoolInformationRequest, 
@@ -29,6 +30,7 @@ use crate::pumpfun::utils::get_splits;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::refund::refund_keypairs;
 use crate::solana::recursive_pay::recursive_pay;
+use crate::solana::utils::build_transaction;
 
 use tokio::spawn;
 
@@ -293,42 +295,53 @@ impl HandlerManager {
 
         keypairs.push(loaded_admin_kp.insecure_clone());
         
-        let mut instructions: Vec<InstructionWithSigners> = Vec::new();
+        let mut instructions: Vec<Instruction> = Vec::new();
 
         for keypair in keypairs_no_mint.iter() {
             let sell_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
             // Clone the keypair and store it in the struct
-            let sell_ixs_with_signers = InstructionWithSigners {
-                instructions: sell_ixs,
-                signers: vec![&keypair], // Store owned Keypair instead of reference
-            };
 
-            instructions.push(sell_ixs_with_signers);
+            instructions.extend(sell_ixs);
         }
 
         let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
 
-        let jito_tip_ix_with_signers = InstructionWithSigners {
-            instructions: vec![jito_tip_ix],
-            signers: vec![],
-        };
-
-        instructions.push(jito_tip_ix_with_signers);
+        instructions.push(jito_tip_ix);
 
         let unlocked_lut = pubkey_to_lut.lock().await;
         let lut_account_pubkey = unlocked_lut.get(&mint);
+
         let txs: Vec<VersionedTransaction> = match lut_account_pubkey {
             Some(lut_pubkey) => {
                 println!("LUT pubkey FOUND ! : {:?}", lut_pubkey);
-                let raw_account = client.get_account(&lut_pubkey).unwrap();
+               let raw_account = client.get_account(&lut_pubkey).unwrap();
                 let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
                 let address_lookup_table_account = AddressLookupTableAccount {
                     key: *lut_pubkey,
                     addresses: address_lookup_table.addresses.to_vec(),
                 };
 
-                let txs = pack_instructions(instructions, &client, &address_lookup_table_account);
-                txs
+                let packed_txs = pack_instructions(instructions, &address_lookup_table_account);
+                let mut ready_txs: Vec<VersionedTransaction> = Vec::new();
+                for tx in packed_txs {
+                    let mut unique_signers: HashSet<Pubkey> = HashSet::new();
+                    for ix in &tx.instructions {
+                        for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
+                            unique_signers.insert(acc.pubkey);
+                        }
+                    }
+
+                    let mut tx_signers: Vec<&Keypair> = Vec::new();
+                    for signer in unique_signers {
+                        if let Some(kp) = keypairs.iter().find(|kp| kp.pubkey() == signer) {
+                            tx_signers.push(kp);
+                        }
+                    }
+                    
+                    let tx = build_transaction(&client, &tx.instructions, tx_signers, address_lookup_table_account.clone());
+                    ready_txs.push(tx);
+                }
+                ready_txs
             }
             None => {
                 println!("LUT pubkey NOT FOUND !");
@@ -336,9 +349,10 @@ impl HandlerManager {
             }
         };
 
-        let _ = self.jito.submit_bundle(txs).await.unwrap();
+        let _ = self.jito.submit_bundle(txs, mint_pubkey, None).await.unwrap();
 
         if with_admin_transfer {
+            tokio::time::sleep(Duration::from_secs(10)).await; //waiting for amounts to reach wallets 
             refund_keypairs(requester, self.admin_kp.pubkey().to_string(), mint).await;
         }
 
@@ -359,17 +373,17 @@ impl HandlerManager {
         })
     }
 
-    pub async fn recursive_pay(&self, 
+    pub async fn pay_recursive(&self, 
         Json(payload): Json<RecursivePayRequest>,
     ) -> Json<SellResponse> {
         let requester: String = payload.pubkey;
         let mint: String = payload.mint;
         let lamports: u64 = payload.lamports;
 
-        let signatures = recursive_pay(requester, mint, lamports).await;
-        println!("Signatures: {:?}", signatures);
+        let result = recursive_pay(requester, mint, lamports).await;
+
         Json(SellResponse {
-            success: true
+            success: result
         })
     }
 }

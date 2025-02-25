@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("Admin keypair loaded: {}", admin_keypair.pubkey());
 
-   refund_keypairs("EzYBEUw6FL9h6hpT1fM91TuX9DsTwA7ASn1Gs9viBsbr".to_string(), admin_keypair.pubkey().to_string(), "".to_string()).await;
+   //refund_keypairs("EzYBEUw6FL9h6hpT1fM91TuX9DsTwA7ASn1Gs9viBsbr".to_string(), admin_keypair.pubkey().to_string(), "".to_string()).await;
 
     let handler_manager = Arc::new(Mutex::new(HandlerManager::new(admin_keypair)));
     //Storing LUT to access it across handlers 
@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let handler_manager = Arc::clone(&handler_manager);
             move |payload| {
                 let handler_manager = Arc::clone(&handler_manager);
-                async move { handler_manager.lock().await.recursive_pay(payload).await }
+                async move { handler_manager.lock().await.pay_recursive(payload).await }
             }
         }))
         .layer(ServiceBuilder::new().layer(CorsLayer::permissive()));

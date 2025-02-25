@@ -1,19 +1,19 @@
 use std::{
     sync::Arc,
+    collections::{HashMap, HashSet},
     env
 };
 use dotenv::dotenv;
 use tokio::time::Duration;
 use reqwest::Client as HttpClient;
-
 use solana_sdk::{
-    account::Account, address_lookup_table::AddressLookupTableAccount, instruction::Instruction, pubkey::Pubkey, rent::Rent, signature::{Keypair, Signer}
+    account::Account, address_lookup_table::AddressLookupTableAccount, instruction::Instruction, pubkey::Pubkey, rent::Rent, signature::{Keypair, Signer}, transaction::VersionedTransaction
 };
 
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::address_lookup_table::state::AddressLookupTable;
 
-use crate::{jito::jito::JitoBundle, params::InstructionWithSigners};
+use crate::jito::jito::JitoBundle;
 use crate::pumpfun::pump::PumpFun;
 use crate::config::{RPC_URL, FEE_AMOUNT, BUFFER_AMOUNT, JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL};
 use crate::params::{CreateTokenMetadata, KeypairWithAmount};
@@ -48,8 +48,6 @@ pub async fn process_bundle(
     let dev_keypair_path = format!("accounts/{}/{}.json", requester_pubkey, dev_keypair_with_amount.keypair.pubkey());
 
     let loaded_dev_keypair = load_keypair(&dev_keypair_path).unwrap();
-
-    let clone_dev_keypair = load_keypair(&dev_keypair_path).unwrap();
 
     let payer: Arc<Keypair> = Arc::new(loaded_dev_keypair);
     let mut pumpfun_client = PumpFun::new(payer);
@@ -132,33 +130,22 @@ pub async fn process_bundle(
     //TODO: Check if this is complete. might require tip instruction, signature to tx, and confirmation that bundle is complete
     let _ = jito.one_tx_bundle(tx).await.unwrap();
 
-    let mut dev_balance = 0;
-
-    while dev_balance == 0 {
-        dev_balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
-        println!("Waiting for dev balance to be funded... Current balance: {}", dev_balance);
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-    println!("Dev wallet funded successfully with {} lamports", dev_balance);
+    //Step 4: Create and extend lut for the bundle 
     
     let other_balances = keypairs_with_amount.iter().map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap()).collect::<Vec<u64>>();
     println!("Other balances: {:?}", other_balances);
 
 
+    tokio::time::sleep(Duration::from_secs(20)).await; //Sleep for 20 seconds to ensure that lut extended + that addresses have their sol received 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction 
 
-    let mut bundle_ixs: Vec<InstructionWithSigners> = Vec::new();
+    let mut bundle_ixs: Vec<Instruction> = Vec::new();
 
     println!("Mint keypair: {:?}", mint.pubkey());
 
     let mint_ix = pumpfun_client.create_instruction(&mint, token_metadata).await.unwrap();
 
-    let mint_ix_with_signers = InstructionWithSigners {
-        instructions: vec![mint_ix],
-        signers: vec![&mint, &clone_dev_keypair], //No need for dev keypair because it will be added in the next step anyway 
-    };
-
-    bundle_ixs.push(mint_ix_with_signers);
+    bundle_ixs.push(mint_ix);
 
     //calculating the max amount of lamports to buy with 
     let rent = Rent::default();
@@ -184,12 +171,7 @@ pub async fn process_bundle(
             .await
             .unwrap();
 
-        let dev_buy_ixs_with_signers = InstructionWithSigners {
-            instructions: dev_buy_ixs,
-            signers: vec![&clone_dev_keypair],
-        };
-
-        bundle_ixs.push(dev_buy_ixs_with_signers);
+        bundle_ixs.extend(dev_buy_ixs);
     }else{
         println!("Dev keypair has insufficient balance. Skipping buy.");
     }
@@ -213,28 +195,73 @@ pub async fn process_bundle(
             .await
             .unwrap();
 
-        let buy_ixs_with_signers = InstructionWithSigners {
-            instructions: buy_ixs,
-            signers: vec![&keypair.keypair],
-        };
-
-        bundle_ixs.push(buy_ixs_with_signers);
+        bundle_ixs.extend(buy_ixs);
     }
 
     //Step 6: Prepare tip instruction 
+    let tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
 
-    let jito_tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
+    bundle_ixs.push(tip_ix);
 
-    let jito_tip_ix_with_signers = InstructionWithSigners {
-        instructions: vec![jito_tip_ix],
-        signers: vec![&clone_dev_keypair], // Include the dev keypair as the signer
-    };
+    let packed_txs = pack_instructions(bundle_ixs, &address_lookup_table_account);
 
-    bundle_ixs.push(jito_tip_ix_with_signers);
+    println!("Packed transactions: {:?}", packed_txs.len());
+    println!("Packed transactions. Needed keypairs for: {:?}", packed_txs[0].signers);
+    println!("Packed transactions. Needed accounts for: {:?}", packed_txs[0].accounts);
+
+    //Inserting signers into the hashmap 
+    let mut transactions: Vec<VersionedTransaction> = Vec::new();
+    // Create a map of pubkey to keypair for all possible signers
+    let mut signers_map: HashMap<Pubkey, &Keypair> = HashMap::new();
+
+    signers_map.insert(dev_keypair_with_amount.keypair.pubkey(), &dev_keypair_with_amount.keypair);
+
+    for keypair in &keypairs_with_amount {
+        signers_map.insert(keypair.keypair.pubkey(), &keypair.keypair);
+    }
+
+    signers_map.insert(admin_kp.pubkey(), &admin_kp);
+    signers_map.insert(mint.pubkey(), &mint);
 
     //Step 7: Bundle instructions into transactions
-    
-    let packed_txs = pack_instructions(bundle_ixs, &client, &address_lookup_table_account);
+
+    // Process each packed transaction
+    for (i, packed_tx) in packed_txs.iter().enumerate() {
+        // Collect required signers' keypairs
+        let mut tx_signers: Vec<&Keypair> = Vec::new();
+        // Use a HashSet to deduplicate signers
+        let mut unique_signers = HashSet::new();
+
+        for ix in &packed_tx.instructions {
+            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
+                unique_signers.insert(acc.pubkey);
+            }
+        }
+
+        // Get keypairs for unique signers
+        for signer in unique_signers {
+            if let Some(kp) = signers_map.get(&signer) {
+                tx_signers.push(kp);
+            } else {
+                println!("Missing keypair for required signer: {:?}", signer);
+            }
+        }
+
+        // Build the transaction with the collected signers
+        let tx = build_transaction(
+            &client,
+            &packed_tx.instructions,
+            tx_signers.clone(),
+            address_lookup_table_account.clone(),
+        );
+
+        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+
+        println!("Taking care of transaction {}", i);
+        println!("Signers: {:?}", tx_signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
+        println!("Transaction size: {}", size);
+        transactions.push(tx);
+    }
 
     let config = RpcSimulateTransactionConfig {
         sig_verify: true,
@@ -243,7 +270,7 @@ pub async fn process_bundle(
         ..Default::default()
     };
 
-    for (i, tx) in packed_txs.iter().enumerate() {
+    for (i, tx) in transactions.iter().enumerate() {
         println!("Simulating transaction {}", i);
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
@@ -259,12 +286,10 @@ pub async fn process_bundle(
         }
     }
 
-    println!("Packed txs count: {:?}", packed_txs.len());
-
     // Send the bundle....
     println!("Attempting to submit bundle...");
 
-    match jito.submit_bundle(packed_txs).await {
+    match jito.submit_bundle(transactions, mint.pubkey(), Some(&pumpfun_client)).await {
         Ok(_) => println!("Bundle submitted successfully"),
         Err(e) => {
             eprintln!("Failed to submit bundle: {:?}", e);
@@ -290,6 +315,6 @@ pub async fn process_bundle(
     });
 
     println!("Bundle completed");
-    println!("Bundle lut: {:?}", lut_pubkey);
-    Ok(lut_pubkey)
+    println!("Bundle lut: {:?}", address_lookup_table_account);
+    Ok(address_lookup_table_account.key)
 }

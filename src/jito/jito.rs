@@ -11,6 +11,8 @@ use solana_sdk::{
 use std::str::FromStr;
 use serde_json::json;use base64::{Engine as _, engine::general_purpose};
 use tokio::time::{sleep, Duration};
+use crate::pumpfun::pump::PumpFun;
+
 use super::utils::check_final_bundle_status;
 
 
@@ -80,9 +82,17 @@ impl JitoBundle {
         Ok(())
     }
 
+    pub async fn submit_bundle(&self, transactions: Vec<VersionedTransaction>, mint: Pubkey, pumpfun_client: Option<&PumpFun>) -> Result<()> {
+        let res = self.process_bundle(transactions.clone(), mint, pumpfun_client).await;
+        if res.is_err() {
+            println!("Error processing bundle. Resubmitting...");
+            return self.process_bundle(transactions, mint, pumpfun_client).await;
+        }
+        res
+    }
 
     //Processes a bundle and returns the bundle UUID when confirmed
-    pub async fn submit_bundle(&self, transactions: Vec<VersionedTransaction>) -> Result<()> {
+    pub async fn process_bundle(&self, transactions: Vec<VersionedTransaction>, mint: Pubkey,  pumpfun_client: Option<&PumpFun>) -> Result<()> {
         // Serialize each transaction and encode it using bs58
 
         //TODO: Check if this step is necessary
@@ -107,7 +117,9 @@ impl JitoBundle {
          println!("Bundle sent with UUID: {}", bundle_uuid);
      
          let retry_delay = Duration::from_secs(5);
-     
+
+         let mut is_pending = false; 
+
          for attempt in 1..=self.max_retries {
              println!("Checking bundle status (attempt {}/{})", attempt, self.max_retries);
      
@@ -125,6 +137,34 @@ impl JitoBundle {
                                      },
                                      Some("Pending") => {
                                          println!("Bundle is pending. Waiting...");
+                                         if !is_pending {
+                                            is_pending = true;
+                                         }
+                                     },
+                                     Some("Invalid") => {
+                                        //Look for bonding curve if available or not
+                                        //If not available, return error and resubmit bundle 
+                                        println!("Bundle is invalid. Waiting...");
+                                        if is_pending {
+                                            match pumpfun_client {
+                                                Some(pumpfun_client) => {
+                                                    let bonding_curve = pumpfun_client.get_pool_information(&mint).await;
+                                                    if bonding_curve.is_ok() {
+                                                        println!("Bonding curve found. Resubmitting bundle...");
+                                                        //No need to resubmit bundle, end here 
+                                                        return Ok(());
+                                                    } else {
+                                                        println!("No bonding curve found. Resubmitting bundle...");
+                                                        return Err(anyhow!("No bonding curve found. Cannot resubmit bundle."));
+                                                    }
+                                                },
+                                                None => {
+                                                    //Invalid and not a token launch, resubmit bundle 
+                                                    println!("Invalid and not a token launch. Resubmitting bundle...");
+                                                    return Err(anyhow!("Invalid and not a token launch. Cannot resubmit bundle."));
+                                                }
+                                            }
+                                        }
                                      },
                                      Some(status) => {
                                          println!("Unexpected bundle status: {}. Waiting...", status);

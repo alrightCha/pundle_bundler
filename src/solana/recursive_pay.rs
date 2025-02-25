@@ -1,21 +1,30 @@
 use std::fs;
-use solana_sdk::message::{v0::Message, VersionedMessage};
+use std::str::FromStr;
 use solana_sdk::{signer::Signer, system_instruction};
-use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::instruction::Instruction;
+use solana_sdk::signer::keypair::Keypair;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use crate::config::RPC_URL;
+use jito_sdk_rust::JitoJsonRpcSDK;
 use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; // For parsing JSON files
 use std::env;
 use dotenv::dotenv;
+use solana_sdk::transaction::Transaction;
+use serde_json::json;
 
-pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> Vec<String> {
+pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
     dotenv().ok();
 
-    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
-    let recipient = load_keypair(&admin_keypair_path).unwrap();
 
     let client = RpcClient::new(RPC_URL);
-    let mut collected_signatures = Vec::new();
+    let jito_sdk = JitoJsonRpcSDK::new("https://mainnet.block-engine.jito.wtf/api/v1", None);
+
+    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
+
+    let recipient: Keypair = load_keypair(&admin_keypair_path).unwrap();
+    
+
     let mut remaining_lamports = lamports;
 
     // Directory containing keypair JSON files
@@ -26,9 +35,14 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> Vec<Str
         Ok(entries) => entries,
         Err(e) => {
             eprintln!("Failed to read directory {}: {}", dir_path, e);
-            return collected_signatures;
+            return false;
         }
     };
+
+
+    //Collecting the instructions for the transactions 
+    let mut ixs: Vec<Instruction> = Vec::new();
+    let mut signers: Vec<Keypair> = Vec::new();
 
     // Iterate over directory entries
     for entry in dir_entries {
@@ -51,6 +65,7 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> Vec<Str
 
             let keypair = load_keypair(file_path.to_str().unwrap()).unwrap();
 
+            //skipping if the keypair is the mint 
             if mint == keypair.pubkey().to_string() {
                 continue;
             }
@@ -72,57 +87,81 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> Vec<Str
                 continue;
             }
 
-            // Calculate transfer amount based on remaining lamports needed
+            // Calculate transfer amount based on remaining lamports needed, removing needed lamports for account rent 
+
             let available_transfer = balance - 2_000_000;
             let transfer_amount = remaining_lamports.min(available_transfer);
+            remaining_lamports -= transfer_amount;
 
+            //Creating instruction to transfer the amount to the recipient
             let ix = system_instruction::transfer(
                 &keypair.pubkey(),
                 &recipient.pubkey(),
                 transfer_amount,
             );
 
-            let (_, blockhash) = match get_slot_and_blockhash(&client) {
-                Ok(result) => result,
-                Err(e) => {
-                    eprintln!("Failed to get blockhash: {}", e);
-                    continue;
-                }
-            };
-
-            let message = match Message::try_compile(
-                &keypair.pubkey(),
-                &[ix],
-                &[],
-                blockhash,
-            ) {
-                Ok(message) => message,
-                Err(e) => {
-                    eprintln!("Failed to compile message: {}", e);
-                    continue;
-                }
-            };
-
-            let versioned_message = VersionedMessage::V0(message);
-
-            let tx = match VersionedTransaction::try_new(versioned_message, &[&keypair]) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    eprintln!("Failed to create transaction: {}", e);
-                    continue;
-                }
-            };
-
-            match client.send_and_confirm_transaction_with_spinner(&tx) {
-                Ok(sig) => {
-                    println!("Transfer successful for {} - Amount: {}", keypair.pubkey(), transfer_amount);
-                    collected_signatures.push(sig.to_string());
-                    remaining_lamports = remaining_lamports.saturating_sub(transfer_amount);
-                }
-                Err(e) => eprintln!("Failed to send transaction: {}", e),
-            }
+            //Adding the instruction and signer to the vectors 
+            ixs.push(ix);
+            signers.push(keypair);
         }
     }
 
-    collected_signatures
+    signers.push(recipient.insecure_clone());
+
+    //Check if the remaining lamports is covered since we finished iterating through the directory 
+    if remaining_lamports > 0 {
+        println!("Remaining lamports: {}", remaining_lamports);
+        println!("Required instructions: {}", ixs.len());
+        println!("Submitting bundle...");
+        return false;
+    }
+
+    //Creating instruction to transfer the tip amount to the jito tip account
+    let random_tip_account = jito_sdk.get_random_tip_account().await.unwrap();
+    let jito_tip_account = Pubkey::from_str(&random_tip_account).unwrap();
+
+    let jito_tip_ix = system_instruction::transfer(
+        &recipient.pubkey(),
+        &jito_tip_account,
+        2000000,
+    );
+
+    //Adding the instruction to the vector 
+    ixs.push(jito_tip_ix);
+
+    //Getting the blockhash
+    let (_, blockhash) = match get_slot_and_blockhash(&client) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to get blockhash: {}", e);
+            return false;
+        }
+    };
+
+    
+
+        // Create a transaction
+    let mut transaction = Transaction::new_with_payer(
+        &ixs,
+        Some(&recipient.pubkey()),
+    );
+
+    let signers: Vec<&Keypair> = signers.iter().map(|k| k).collect();
+
+    transaction.sign(&signers, blockhash);
+
+    // Serialize the transaction
+    let serialized_tx = bs58::encode(bincode::serialize(&transaction).unwrap()).into_string();
+    
+    // Prepare bundle for submission (array of transactions)
+    let bundle = json!([serialized_tx]);
+
+    // UUID for the bundle
+    let uuid = None;
+
+    // Send bundle using Jito SDK
+    println!("Sending bundle with 1 transaction...");
+    let _ = jito_sdk.send_bundle(Some(bundle), uuid).await.unwrap();
+
+    true
 }
