@@ -13,9 +13,8 @@ use dotenv::dotenv;
 use solana_sdk::transaction::Transaction;
 use serde_json::json;
 
-pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
+pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, with_admin_transfer: bool) -> bool {
     dotenv().ok();
-
 
     let client = RpcClient::new(RPC_URL);
     let jito_sdk = JitoJsonRpcSDK::new("https://mainnet.block-engine.jito.wtf/api/v1", None);
@@ -23,9 +22,15 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
 
     let recipient: Keypair = load_keypair(&admin_keypair_path).unwrap();
-    
+    let user_recipient: Pubkey = Pubkey::from_str(&from).unwrap();
+
+    let final_recipient: Pubkey = match with_admin_transfer {
+        true => recipient.pubkey(),
+        false => user_recipient,
+    };
 
     let mut remaining_lamports = lamports;
+    let mut total_available: u64 = 0;
 
     // Directory containing keypair JSON files
     let dir_path = format!("accounts/{}", from);
@@ -46,9 +51,11 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
 
     // Iterate over directory entries
     for entry in dir_entries {
-        // Break if we've collected enough lamports
-        if remaining_lamports == 0 {
-            break;
+        // Break if we've collected enough lamports (only when a specific amount is requested)
+        if let Some(remaining) = remaining_lamports {
+            if remaining == 0 {
+                break;
+            }
         }
 
         let entry = match entry {
@@ -87,16 +94,25 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
                 continue;
             }
 
-            // Calculate transfer amount based on remaining lamports needed, removing needed lamports for account rent 
-
+            // Calculate transfer amount based on remaining lamports needed or maximum available
             let available_transfer = balance - 2_000_000;
-            let transfer_amount = remaining_lamports.min(available_transfer);
-            remaining_lamports -= transfer_amount;
+            
+            let transfer_amount = match remaining_lamports {
+                Some(remaining) => remaining.min(available_transfer),
+                None => available_transfer,
+            };
+
+            // Update remaining_lamports if we're collecting a specific amount
+            if let Some(remaining) = remaining_lamports.as_mut() {
+                *remaining = remaining.saturating_sub(transfer_amount);
+            }
+            
+            total_available += transfer_amount;
 
             //Creating instruction to transfer the amount to the recipient
             let ix = system_instruction::transfer(
                 &keypair.pubkey(),
-                &recipient.pubkey(),
+                &final_recipient,
                 transfer_amount,
             );
 
@@ -108,12 +124,14 @@ pub async fn recursive_pay(from: String, mint: String, lamports: u64) -> bool {
 
     signers.push(recipient.insecure_clone());
 
-    //Check if the remaining lamports is covered since we finished iterating through the directory 
-    if remaining_lamports > 0 {
-        println!("Remaining lamports: {}", remaining_lamports);
-        println!("Required instructions: {}", ixs.len());
-        println!("Submitting bundle...");
-        return false;
+    //Check if we have enough lamports when a specific amount was requested
+    if let Some(remaining) = remaining_lamports {
+        if remaining > 0 {
+            println!("Remaining lamports needed: {}", remaining);
+            println!("Total available: {}", total_available);
+            println!("Required instructions: {}", ixs.len());
+            return false;
+        }
     }
 
     //Creating instruction to transfer the tip amount to the jito tip account

@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::io::{BufWriter, Write};
+use anchor_spl::associated_token::get_associated_token_address;
 
 //Create a keypair under the keys/requester/keypair_pubkey.json directory
 pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error::Error>> {
@@ -100,7 +101,7 @@ pub fn build_transaction(
 
     // Find first keypair with balance > 0.02 SOL
     let min_balance = 20_000_000; // 0.02 SOL in lamports
-    
+
     let payer = keypairs.iter()
         .find(|kp| {
             match client.get_balance(&kp.pubkey()) {
@@ -168,6 +169,12 @@ pub fn get_keypairs_for_pubkey(pubkey: &String) -> Result<Vec<Keypair>, Box<dyn 
     Ok(keypairs)
 }
 
+pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubkey) -> u64 {
+    let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
+    let balance = client.get_token_account_balance(&ata).unwrap();
+    let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
+    balance_u64
+}
 //TODO: Add a function that receives instructions and returns a an array of transactions, 
 //Make sure the transactions take as many instructions as possible to be efficient 
 

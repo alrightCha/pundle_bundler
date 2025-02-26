@@ -289,13 +289,7 @@ pub async fn process_bundle(
     // Send the bundle....
     println!("Attempting to submit bundle...");
 
-    match jito.submit_bundle(transactions, mint.pubkey(), Some(&pumpfun_client)).await {
-        Ok(_) => println!("Bundle submitted successfully"),
-        Err(e) => {
-            eprintln!("Failed to submit bundle: {:?}", e);
-            return Err(e.to_string().into());
-        }
-    }
+    let _ = jito.submit_bundle(transactions, mint.pubkey(), Some(&pumpfun_client)).await.unwrap();
 
     println!("Making callback to orchestrator...");
     // Fire and forget the callback

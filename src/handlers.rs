@@ -28,9 +28,10 @@ use crate::params::{
 };
 use crate::pumpfun::utils::get_splits;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::refund::refund_keypairs;
+use crate::jupiter::swap::swap_ixs;
 use crate::solana::recursive_pay::recursive_pay;
 use crate::solana::utils::build_transaction;
+use crate::solana::utils::get_ata_balance;
 
 use tokio::spawn;
 
@@ -234,7 +235,18 @@ impl HandlerManager {
 
         let pumpfun_client = PumpFun::new(payer);
         
-        let sell_ixs = pumpfun_client.sell_ix(&mint_pubkey, &keypair, Some(amount), None, None).await.unwrap();
+        let bonded = pumpfun_client.get_pool_information(&mint_pubkey).await.unwrap();
+
+        let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
+            true => {
+                let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
+                swap_ixs
+            }
+            false => {
+                let pump_ixs = pumpfun_client.sell_ix(&mint_pubkey, &keypair, Some(amount), None, None).await.unwrap();
+                pump_ixs
+            }
+        };
 
         let blockhash = client.get_latest_blockhash().unwrap();
 
@@ -282,6 +294,8 @@ impl HandlerManager {
 
         let pumpfun_client = PumpFun::new(payer);
 
+        let token_bonded = pumpfun_client.get_pool_information(&mint_pubkey).await.unwrap().is_bonding_curve_complete;
+        
         // Get keypairs using the existing utility function and filter out the mint keypair
         let mut keypairs = match get_keypairs_for_pubkey(&requester) {
             Ok(kps) => kps,
@@ -298,9 +312,18 @@ impl HandlerManager {
         let mut instructions: Vec<Instruction> = Vec::new();
 
         for keypair in keypairs_no_mint.iter() {
-            let sell_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
-            // Clone the keypair and store it in the struct
-
+            let sell_ixs : Vec<Instruction> = match token_bonded {
+                true => {
+                    let amount = get_ata_balance(&client, keypair, &mint_pubkey).await;
+                    let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
+                    swap_ixs
+                }
+                false => {
+                    let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
+                    pump_ixs
+                }
+            };
+            
             instructions.extend(sell_ixs);
         }
 
@@ -349,11 +372,11 @@ impl HandlerManager {
             }
         };
 
-        let _ = self.jito.submit_bundle(txs, mint_pubkey, None).await.unwrap();
+        let _ = self.jito.submit_bundle(txs, mint_pubkey, None).await;
 
         if with_admin_transfer {
             tokio::time::sleep(Duration::from_secs(10)).await; //waiting for amounts to reach wallets 
-            refund_keypairs(requester, self.admin_kp.pubkey().to_string(), mint).await;
+            let _ = recursive_pay(requester, mint, None, true).await;
         }
 
         Json(SellResponse {
@@ -366,8 +389,7 @@ impl HandlerManager {
     ) -> Json<SellResponse> {
         let requester: String = payload.pubkey;
         let mint: String = payload.mint;
-        let to = Pubkey::from_str(&requester).unwrap();
-        refund_keypairs(requester, to.to_string(), mint).await;
+        let _ = recursive_pay(requester, mint, None, false).await;
         Json(SellResponse {
             success: true,
         })
@@ -380,7 +402,7 @@ impl HandlerManager {
         let mint: String = payload.mint;
         let lamports: u64 = payload.lamports;
 
-        let result = recursive_pay(requester, mint, lamports).await;
+        let result = recursive_pay(requester, mint, Some(lamports), true).await;
 
         Json(SellResponse {
             success: result
