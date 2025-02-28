@@ -11,12 +11,10 @@ pub const MAX_RETRIES: u32 = 10;
 pub const FEE_AMOUNT: u64 = 10_000;
 pub const BUFFER_AMOUNT: u64 = 10_000_000;
 pub const TOKEN_AMOUNT_MULTIPLIER: u64 = 1_000_000;
-pub const DEFAULT_HOST: &str = "127.0.0.1";
-pub const HTTPS_PORT: u16 = 443;
-pub const CERTIFICATE_DIR_ENV_KEY: &str = "CERTIFICATE_DIR";
+pub const PORT: u16 = 3000;
 
 pub async fn setup_https_config() -> RustlsConfig {
-    let cert_dir = env::var(CERTIFICATE_DIR_ENV_KEY)
+    let cert_dir = env::var("CERTIFICATE_DIR")
         .expect("Certificate directory not defined");
     let cert_path = PathBuf::from(&cert_dir).join("fullchain.pem");
     let key_path = PathBuf::from(&cert_dir).join("privkey.pem");

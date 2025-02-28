@@ -7,11 +7,10 @@ mod params;
 mod jupiter;
 
 use std::sync::Arc;
-use config::setup_https_config;
-use config::{DEFAULT_HOST, HTTPS_PORT};
 
 use axum::routing::{get, post};
 use axum::Router;
+use config::PORT;
 use solana::refund::refund_keypairs;
 use solana::utils::load_keypair;
 use solana_sdk::signer::Signer;
@@ -38,12 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     //seup mode from env 
     let mode = env::var("MODE").unwrap_or_else(|_| "DEBUG".to_string());
-    //setup ip address from env 
     let ip_address = Ipv4Addr::from_str(
-        &env::var("HOST_IPV4").unwrap_or_else(|_| DEFAULT_HOST.to_string())
+        &env::var("HOST_IPV4").unwrap_or_else(|_| "127.0.0.1".to_string())
     )?;
-    
-    let addr = SocketAddr::from((ip_address, HTTPS_PORT));
+
+    let addr = SocketAddr::from((ip_address, PORT));
 
     //Load admin keypair 
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
@@ -119,19 +117,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting Server [{}] at: {}", mode, addr);
 
     //setup https config
-    match mode.as_str() {
-        "PRODUCTION" => {
-            let config = setup_https_config().await;
-            axum_server::bind_rustls(addr, config)
-                .serve(app.into_make_service())
-                .await?;
-        }
-        _ => {
-            let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
             axum::serve(listener, app.into_make_service())
                 .await?;
-        }
-    }
 
     Ok(())
 }
