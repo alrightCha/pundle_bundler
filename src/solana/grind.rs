@@ -1,7 +1,8 @@
 use std::process::{Command, Output};
 
 pub fn grind(owner: String) -> Result<String, String> {
-    let solana_keygen_path = "/home/neo/.local/share/solana/install/active_release/bin/solana-keygen"; // Path to solana-keygen
+    ////root/.local/share/solana/install/active_release/bin/solana-keygen
+    let solana_keygen_path = "/root/.local/share/solana/install/active_release/bin/solana-keygen"; // Path to solana-keygen
     let output_dir = "accounts"; // Directory to store the keypairs
 
     // Execute the external script and capture the output
