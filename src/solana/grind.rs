@@ -1,16 +1,10 @@
 use std::process::{Command, Output};
 
 pub fn grind(owner: String) -> Result<String, String> {
-    ////root/.local/share/solana/install/active_release/bin/solana-keygen
-    let solana_keygen_path = "/root/.local/share/solana/install/active_release/bin/solana-keygen"; // Path to solana-keygen
-    let output_dir = "accounts"; // Directory to store the keypairs
-
     // Execute the external script and capture the output
-    let output: Output = Command::new("sh")
+    let output: Output = Command::new("bash")
         .arg("./grind.sh")
         .arg(&owner)
-        .arg(&solana_keygen_path)
-        .arg(&output_dir)
         .output()
         .expect("Failed to execute script");
 
@@ -32,6 +26,7 @@ pub fn grind(owner: String) -> Result<String, String> {
             Err("No keypair file path found in script output.".to_string())
         }
     } else {
+        println!("Script failed to execute. we are in else condition");
         // If script failed, convert stderr to String and return it as an error
         let error_message = String::from_utf8(output.stderr)
             .unwrap_or_else(|_| "Unknown error executing script.".to_string());
