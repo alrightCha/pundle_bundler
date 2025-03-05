@@ -117,12 +117,19 @@ impl PumpFun {
         keypair: &Keypair,
         amount_sol: u64,
         slippage_basis_points: Option<u64>,
+        with_stimulate: bool,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await?;
          //Problem here. The bonding curve account is not found. 
      
-        let buy_amount = self.bonding_curve.get_buy_price(amount_sol).unwrap();
+        let buy_amount = match with_stimulate {
+            true => self.bonding_curve.get_buy_price(amount_sol).unwrap(),
+            false => {
+                let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
+                bonding_curve_account.get_buy_price(amount_sol).unwrap()
+            }
+        };
 
         let buy_amount_with_slippage =
             pumpfun::utils::calculate_with_slippage_buy(amount_sol, slippage_basis_points.unwrap_or(500));
@@ -253,9 +260,12 @@ impl PumpFun {
                   .get_sell_price(balance_u64, global_account.fee_basis_points)
                   .map_err(pumpfun::error::ClientError::BondingCurveError)?;
 
+        // 500 basis points = 5% slippage
+        // Setting slippage to 10000 (100%) means you'll accept any price above min_sol * 0,
+        // which could result in getting much less SOL than expected
         let min_sol_output = pumpfun::utils::calculate_with_slippage_sell(
             min_sol,
-            500,
+            3000, // 30% slippage - you'll get at least 70% of min_sol
         );
 
         let mut instructions: Vec<Instruction> = Vec::new();
@@ -270,7 +280,7 @@ impl PumpFun {
             },
         );
 
-        let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
+        let tax_amount = min_sol / 100; // Calculate 1% of min_sol_output
         let tax_ix = transfer(
             &keypair.pubkey(),
             &Pubkey::from_str(ADMIN_PUBKEY).unwrap(), // Send to admin public key

@@ -53,10 +53,8 @@ mod tests {
         
         // Test different buy amounts (in lamports)
         let test_amounts = vec![
-            300_000_000,     // 1 SOL
-            1_000_000_000,     // 2 SOL
-            1_000_000_000,     // 5 SOL
-            1_000_000_000,    // 10 SOL
+            300_000_000,    
+            1_000_000_000,
         ];
 
         for amount in test_amounts {

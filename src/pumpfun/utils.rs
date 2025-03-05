@@ -13,7 +13,7 @@ pub fn get_splits(dev_buy: u64, amount: u64) -> Vec<u64> {
     println!("Tokens to receive: {:?}", tokens_for_amount);
 
     const TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000;
-    const MAX_WALLET_PERCENTAGE: f64 = 0.025; // 2.5%
+    const MAX_WALLET_PERCENTAGE: f64 = 0.001; // 0.1%
     const MAX_TOKENS_PER_WALLET: u64 = (TOTAL_SUPPLY as f64 * MAX_WALLET_PERCENTAGE) as u64;
 
     // Calculate how many wallets needed based on token amount
@@ -81,8 +81,8 @@ mod tests {
 
     #[test]
     fn test_large_amount_multiple_splits() {
-        let dev_buy = 1_000_000_000;
-        let amount = 2_000_000_000; // Large amount that should result in multiple wallets
+        let dev_buy = 300_000_000;
+        let amount = 500_000_000; // Large amount that should result in multiple wallets
         let splits = get_splits(dev_buy, amount);
         
         let total = splits.iter().sum::<u64>();

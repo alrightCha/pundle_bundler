@@ -329,8 +329,6 @@ impl HandlerManager {
 
         let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
 
-        instructions.push(jito_tip_ix);
-
         let unlocked_lut = pubkey_to_lut.lock().await;
         let lut_account_pubkey = unlocked_lut.get(&mint);
 
@@ -344,7 +342,7 @@ impl HandlerManager {
                     addresses: address_lookup_table.addresses.to_vec(),
                 };
 
-                let packed_txs = pack_instructions(instructions, &address_lookup_table_account);
+                let packed_txs = pack_instructions(instructions, jito_tip_ix, &address_lookup_table_account);
                 let mut ready_txs: Vec<VersionedTransaction> = Vec::new();
                 for tx in packed_txs {
                     let mut unique_signers: HashSet<Pubkey> = HashSet::new();

@@ -166,7 +166,8 @@ pub async fn process_bundle(
             &mint.pubkey(),
             &dev_keypair_with_amount.keypair, 
             final_dev_buy_amount, 
-            None
+            None,
+            true
             )
             .await
             .unwrap();
@@ -190,7 +191,8 @@ pub async fn process_bundle(
             mint_pubkey,
             &keypair.keypair, 
             final_buy_amount, 
-            None
+            None,
+            true
             )
             .await
             .unwrap();
@@ -201,9 +203,7 @@ pub async fn process_bundle(
     //Step 6: Prepare tip instruction 
     let tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
 
-    bundle_ixs.push(tip_ix);
-
-    let packed_txs = pack_instructions(bundle_ixs, &address_lookup_table_account);
+    let packed_txs = pack_instructions(bundle_ixs, tip_ix, &address_lookup_table_account);
 
     println!("Packed transactions: {:?}", packed_txs.len());
     println!("Packed transactions. Needed keypairs for: {:?}", packed_txs[0].signers);
