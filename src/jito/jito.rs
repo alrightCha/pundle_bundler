@@ -116,7 +116,7 @@ impl JitoBundle {
              .ok_or_else(|| anyhow!("Failed to get bundle UUID from response"))?;
          println!("Bundle sent with UUID: {}", bundle_uuid);
      
-         let retry_delay = Duration::from_secs(1);
+         let retry_delay = Duration::from_secs(5);
 
          let mut is_pending = false; 
 
