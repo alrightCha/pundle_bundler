@@ -52,9 +52,8 @@ use crate::solana::grind::grind;
 use crate::solana::utils::{create_keypair, load_keypair, get_keypairs_for_pubkey};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, TOKEN_AMOUNT_MULTIPLIER};
 use crate::jito::bundle::process_bundle;
-use crate::solana::helper::pack_instructions;
+use crate::solana::helpers::sell_all_txs;
 use std::collections::HashMap;
-use solana_sdk::address_lookup_table::AddressLookupTableAccount;
 
 
 //TODO : Sell all , Sell unique, Sell bulk
@@ -154,7 +153,7 @@ impl HandlerManager {
     
         // Spawn background processing of bundle in a separate task
         spawn(async move {
-            match process_bundle(keypairs_with_amount, dev_keypair_with_amount, mint, payload.requester_pubkey, token_metadata).await {
+            match process_bundle(keypairs_with_amount, dev_keypair_with_amount, &mint, payload.requester_pubkey, token_metadata).await {
                 Ok(lut) => {
                     println!("Inserting LUT for mint: {:?}", mint_pubkey);
                     println!("LUT: {:?}", lut);
@@ -293,8 +292,6 @@ impl HandlerManager {
         let payer: Arc<Keypair> = Arc::new(loaded_admin_kp.insecure_clone());
 
         let pumpfun_client = PumpFun::new(payer);
-
-        let token_bonded = pumpfun_client.get_pool_information(&mint_pubkey).await.unwrap().is_bonding_curve_complete;
         
         // Get keypairs using the existing utility function and filter out the mint keypair
         let mut keypairs = match get_keypairs_for_pubkey(&requester) {
@@ -308,61 +305,15 @@ impl HandlerManager {
         let keypairs_no_mint: Vec<Keypair> = keypairs.iter().filter(|kp| kp.pubkey() != mint_pubkey).map(|kp| kp.insecure_clone()).collect();
 
         keypairs.push(loaded_admin_kp.insecure_clone());
-        
-        let mut instructions: Vec<Instruction> = Vec::new();
 
-        for keypair in keypairs_no_mint.iter() {
-            let sell_ixs : Vec<Instruction> = match token_bonded {
-                true => {
-                    let amount = get_ata_balance(&client, keypair, &mint_pubkey).await;
-                    let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
-                    swap_ixs
-                }
-                false => {
-                    let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await.unwrap();
-                    pump_ixs
-                }
-            };
-            
-            instructions.extend(sell_ixs);
-        }
-
-        let jito_tip_ix = self.jito.get_tip_ix(self.admin_kp.pubkey()).await.unwrap();
-        instructions.push(jito_tip_ix);
         let unlocked_lut = pubkey_to_lut.lock().await;
         let lut_account_pubkey = unlocked_lut.get(&mint);
 
+
         let txs: Vec<VersionedTransaction> = match lut_account_pubkey {
             Some(lut_pubkey) => {
-                println!("LUT pubkey FOUND ! : {:?}", lut_pubkey);
-               let raw_account = client.get_account(&lut_pubkey).unwrap();
-                let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
-                let address_lookup_table_account = AddressLookupTableAccount {
-                    key: *lut_pubkey,
-                    addresses: address_lookup_table.addresses.to_vec(),
-                };
-
-                let packed_txs = pack_instructions(instructions, &address_lookup_table_account);
-                let mut ready_txs: Vec<VersionedTransaction> = Vec::new();
-                for tx in packed_txs {
-                    let mut unique_signers: HashSet<Pubkey> = HashSet::new();
-                    for ix in &tx.instructions {
-                        for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                            unique_signers.insert(acc.pubkey);
-                        }
-                    }
-
-                    let mut tx_signers: Vec<&Keypair> = Vec::new();
-                    for signer in unique_signers {
-                        if let Some(kp) = keypairs.iter().find(|kp| kp.pubkey() == signer) {
-                            tx_signers.push(kp);
-                        }
-                    }
-                    
-                    let tx = build_transaction(&client, &tx.instructions, &tx_signers, address_lookup_table_account.clone());
-                    ready_txs.push(tx);
-                }
-                ready_txs
+                let result = sell_all_txs(loaded_admin_kp, keypairs_no_mint.iter().map(|kp| kp).collect(), &mint_pubkey, *lut_pubkey, pumpfun_client, client).await;
+                result
             }
             None => {
                 println!("LUT pubkey NOT FOUND !");
