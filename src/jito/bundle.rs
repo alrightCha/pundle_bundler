@@ -92,12 +92,7 @@ pub async fn process_bundle(
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
 
-    //Create atas for the keypairs
-    let mut ata_ixs: Vec<Instruction> = Vec::new();
-
     for keypair in keypairs_with_amount.iter() {
-        let ix = pumpfun_client.create_ata(&admin_kp.pubkey(), &keypair.keypair.pubkey(), &mint.pubkey());
-        ata_ixs.push(ix);
         pubkeys_for_lut.push(keypair.keypair.pubkey());
         let ata_pubkey = pumpfun_client.get_ata(&keypair.keypair.pubkey(), &mint.pubkey());
         println!("ATA pubkey: {:?}", ata_pubkey);
@@ -105,8 +100,6 @@ pub async fn process_bundle(
     }
     let dev_ata_pubkey = pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
-    let dev_ata_ix = pumpfun_client.create_ata(&admin_kp.pubkey(), &dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
-    ata_ixs.push(dev_ata_ix);
 
     //Extend lut with addresses & attached token accounts
     let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
@@ -146,15 +139,6 @@ pub async fn process_bundle(
     let _ = jito.one_tx_bundle(tx).await.unwrap();
 
     tokio::time::sleep(Duration::from_secs(20)).await; //Sleep for 20 seconds to ensure that lut extended + that addresses have their sol received 
-
-    //Step 3.5 -> Create accounts for the keypairs 
-    let tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
-
-    ata_ixs.push(tip_ix);
-    println!("Beginning creation of attached token accounts... {}", ata_ixs.len());
-    let atas_tx = build_transaction(&client, &ata_ixs, &vec![&admin_kp], address_lookup_table_account.clone());
-    let _ = jito.one_tx_bundle(atas_tx).await.unwrap();
-    println!("Attached token accounts created");
 
     //Step 4: Create and extend lut for the bundle 
     let other_balances = keypairs_with_amount.iter().map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap()).collect::<Vec<u64>>();
