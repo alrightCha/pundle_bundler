@@ -133,7 +133,7 @@ pub async fn process_bundle(
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let tx = build_transaction(&client, &instructions, &vec![&admin_kp, &dev_keypair_with_amount.keypair], address_lookup_table_account.clone());
+    let tx = build_transaction(&client, &instructions, &vec![&admin_kp], address_lookup_table_account.clone());
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
@@ -143,9 +143,9 @@ pub async fn process_bundle(
 
 
     //Step 3.5 -> Create accounts for the keypairs 
-    let tip_ix = jito.get_tip_ix(dev_keypair_with_amount.keypair.pubkey()).await.unwrap();
+    let tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
     ata_ixs.push(tip_ix);
-    let atas_tx = build_transaction(&client, &ata_ixs, &vec![&dev_keypair_with_amount.keypair], address_lookup_table_account.clone());
+    let atas_tx = build_transaction(&client, &ata_ixs, &vec![&admin_kp, &dev_keypair_with_amount.keypair], address_lookup_table_account.clone());
     let _ = jito.one_tx_bundle(atas_tx).await.unwrap();
 
 
