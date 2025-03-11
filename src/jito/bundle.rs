@@ -141,20 +141,21 @@ pub async fn process_bundle(
     //TODO: Check if this is complete. might require tip instruction, signature to tx, and confirmation that bundle is complete
     let _ = jito.one_tx_bundle(tx).await.unwrap();
 
-
+    tokio::time::sleep(Duration::from_secs(20)).await; //Sleep for 20 seconds to ensure that lut extended + that addresses have their sol received 
+    
     //Step 3.5 -> Create accounts for the keypairs 
     let tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
     ata_ixs.push(tip_ix);
+    println!("Beginning creation of attached token accounts... {}", ata_ixs.len());
     let atas_tx = build_transaction(&client, &ata_ixs, &vec![&admin_kp, &dev_keypair_with_amount.keypair], address_lookup_table_account.clone());
     let _ = jito.one_tx_bundle(atas_tx).await.unwrap();
-
+    println!("Attached token accounts created");
 
     //Step 4: Create and extend lut for the bundle 
     let other_balances = keypairs_with_amount.iter().map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap()).collect::<Vec<u64>>();
     println!("Other balances: {:?}", other_balances);
 
 
-    tokio::time::sleep(Duration::from_secs(20)).await; //Sleep for 20 seconds to ensure that lut extended + that addresses have their sol received 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction 
     let mint_pubkey = mint.pubkey();
 
