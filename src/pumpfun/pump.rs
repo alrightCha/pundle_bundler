@@ -77,9 +77,9 @@ impl PumpFun {
     }
 
     //TODO: Use this serialized to all accounts and send as single tx and wait for confirmation before proceeding with the buy
-    pub fn create_ata(&self, wallet: &Pubkey, mint: &Pubkey) -> Instruction {
+    pub fn create_ata(&self, payer: &Pubkey, wallet: &Pubkey, mint: &Pubkey) -> Instruction {
         let create_ata_ix = create_associated_token_account(
-            &wallet, // Admin pays for account creation
+            &payer, // Admin pays for account creation
             wallet,               // Wallet that will own the ATA
             mint,
             &pumpfun::constants::accounts::TOKEN_PROGRAM,
