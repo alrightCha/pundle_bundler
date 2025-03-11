@@ -158,6 +158,12 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             if let Some(kp) = others_with_amount.iter().find(|kp| kp.keypair.pubkey() == signer) {
                 maybe_ix_tx_signers.push(&kp.keypair);
             }
+            if signer == dev_with_amount.keypair.pubkey() {
+                tx_signers.push(&dev_with_amount.keypair);
+            }
+            if signer == mint_keypair.pubkey() {
+                tx_signers.push(&mint_keypair);
+            }
         }
 
         let maybe_tx = build_transaction(&client, &all_ixs, &maybe_ix_tx_signers, address_lookup_table_account.clone());
