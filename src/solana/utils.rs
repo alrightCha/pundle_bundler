@@ -169,6 +169,3 @@ pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubke
     let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
     balance_u64
 }
-//TODO: Add a function that receives instructions and returns a an array of transactions, 
-//Make sure the transactions take as many instructions as possible to be efficient 
-

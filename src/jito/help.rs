@@ -1,5 +1,5 @@
 use super::jito::JitoBundle;
-use crate::pumpfun::pump::PumpFun;
+use crate::{config::SOLANA_TIP, pumpfun::pump::PumpFun};
 use crate::solana::utils::build_transaction;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
@@ -16,6 +16,7 @@ use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL};
 use std::sync::Arc;
 use crate::params::{CreateTokenMetadata, KeypairWithAmount};
 use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -87,7 +88,8 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
     let mut current_tx_ixs : Vec<Instruction> = Vec::new(); 
-
+    let price_ix = ComputeBudgetInstruction::set_compute_unit_price(SOLANA_TIP);
+    current_tx_ixs.push(price_ix);
     current_tx_ixs.extend(dev_ix);
     current_tx_ixs.push(mint_ix);
     current_tx_ixs.push(tip_ix);
@@ -177,6 +179,8 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
             current_tx_ixs.extend(new_ixs);
+            let price_ix = ComputeBudgetInstruction::set_compute_unit_price(SOLANA_TIP);
+            current_tx_ixs.push(price_ix);
             if index % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
                 let tip_ix = jito.get_tip_ix(dev_with_amount.keypair.pubkey()).await.unwrap();
@@ -210,6 +214,7 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
                 tx_signers.push(&mint_keypair);
             }
         }
+
         transactions.push(build_transaction(&client, &current_tx_ixs, &tx_signers, address_lookup_table_account.clone()));
     }
 
