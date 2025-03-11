@@ -90,10 +90,8 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
     let mut current_tx_ixs : Vec<Instruction> = Vec::new(); 
-    let price_ix = ComputeBudgetInstruction::set_compute_unit_price(SOLANA_TIP);
-    current_tx_ixs.push(price_ix);
-    current_tx_ixs.extend(dev_ix);
     current_tx_ixs.push(mint_ix);
+    current_tx_ixs.extend(dev_ix);
     current_tx_ixs.push(tip_ix);
 
     for (index, keypair) in others_with_amount.iter().enumerate() {
@@ -181,8 +179,6 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
             current_tx_ixs.extend(new_ixs);
-            let price_ix = ComputeBudgetInstruction::set_compute_unit_price(SOLANA_TIP);
-            current_tx_ixs.push(price_ix);
             if index % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
                 let tip_ix = jito.get_tip_ix(dev_with_amount.keypair.pubkey()).await.unwrap();
