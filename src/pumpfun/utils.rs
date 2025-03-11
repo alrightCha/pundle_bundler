@@ -13,7 +13,7 @@ pub fn get_splits(dev_buy: u64, amount: u64) -> Vec<u64> {
     println!("Tokens to receive: {:?}", tokens_for_amount);
 
     const TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000;
-    const MAX_WALLET_PERCENTAGE: f64 = 0.025; // 1%
+    const MAX_WALLET_PERCENTAGE: f64 = 0.01; // 1%
     const MAX_TOKENS_PER_WALLET: u64 = (TOTAL_SUPPLY as f64 * MAX_WALLET_PERCENTAGE) as u64;
 
     // Calculate how many wallets needed based on token amount
