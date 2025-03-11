@@ -100,6 +100,7 @@ pub async fn process_bundle(
         ata_ixs.push(ix);
         pubkeys_for_lut.push(keypair.keypair.pubkey());
         let ata_pubkey = pumpfun_client.get_ata(&keypair.keypair.pubkey(), &mint.pubkey());
+        println!("ATA pubkey: {:?}", ata_pubkey);
         pubkeys_for_lut.push(ata_pubkey);
     }
 
@@ -144,7 +145,7 @@ pub async fn process_bundle(
     //Step 3.5 -> Create accounts for the keypairs 
     let tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
     ata_ixs.push(tip_ix);
-    let atas_tx = build_transaction(&client, &ata_ixs, &vec![&admin_kp], address_lookup_table_account.clone());
+    let atas_tx = build_transaction(&client, &ata_ixs, &vec![&admin_kp, &dev_keypair_with_amount.keypair], address_lookup_table_account.clone());
     let _ = jito.one_tx_bundle(atas_tx).await.unwrap();
 
 

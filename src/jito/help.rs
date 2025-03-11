@@ -26,7 +26,7 @@ token_metadata: CreateTokenMetadata
 */
 
 pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: &Keypair, others_with_amount: Vec<KeypairWithAmount>, lut_pubkey: Pubkey, mint_pubkey: Pubkey, token_metadata: CreateTokenMetadata) -> Vec<VersionedTransaction> {
-    
+    println!("Building bundle txs...");
     let client = RpcClient::new(RPC_URL);
 
     let jito_rpc = RpcClient::new_with_commitment(
@@ -47,15 +47,6 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
-
-    print!("LUT: {:?}", address_lookup_table_account);
-
-    let addresses: Vec<Pubkey> = others_with_amount
-        .iter()
-        .map(|keypair| keypair.keypair.pubkey())
-        .collect();
-
-    print!("Buying addresses: {:?}", addresses);
 
     //BUILD INSTRUCTIONS
 
