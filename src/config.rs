@@ -12,6 +12,8 @@ pub const FEE_AMOUNT: u64 = 10_000;
 pub const BUFFER_AMOUNT: u64 = 10_000_000;
 pub const TOKEN_AMOUNT_MULTIPLIER: u64 = 1_000_000;
 pub const PORT: u16 = 3000;
+pub const JITO_TIP_SIZE: usize = 80;
+pub const MAX_TX_PER_BUNDLE: usize = 5;
 
 pub async fn setup_https_config() -> RustlsConfig {
     let cert_dir = env::var("CERTIFICATE_DIR")

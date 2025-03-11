@@ -14,7 +14,10 @@ pub async fn refund_keypairs(from: String, recipient: String, mint: String) {
     let recipient = Pubkey::from_str(&recipient).unwrap();
 
     // Directory containing keypair JSON files
-    let dir_path = format!("accounts/{}", from);
+    let dir_path = match from == "" {
+        true => "accounts/".to_string(), 
+        false => format!("accounts/{}", from)
+    }; 
 
     // Read the directory
     let dir_entries = match fs::read_dir(&dir_path) {

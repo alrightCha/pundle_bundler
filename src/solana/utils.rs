@@ -91,7 +91,7 @@ pub fn transfer_ix(from: &Pubkey, to: &Pubkey, amount: u64) -> Instruction {
 pub fn build_transaction(
     client: &RpcClient,
     ixes: &[Instruction],
-    keypairs: Vec<&Keypair>, // Accept a vector of keypairs
+    keypairs: &Vec<&Keypair>, // Accept a vector of keypairs
     lut: AddressLookupTableAccount,
 ) -> VersionedTransaction {
     // Ensure there is at least one keypair to use as the payer
@@ -122,13 +122,7 @@ pub fn build_transaction(
         blockhash,
     ).unwrap();
     
-    println!("Message required signers: {:?}", message.account_keys.iter()
-        .enumerate()  // Add this to get index
-        .filter(|(i, _)| message.is_maybe_writable(*i))  // Use index instead of Pubkey
-        .map(|(_, key)| key)  // Map back to just the keys
-        .collect::<Vec<&Pubkey>>());
     // Compile the message with the payer's public key
-    
     let versioned_message = VersionedMessage::V0(message);
 
     // Create a vector of references to the keypairs for signing

@@ -9,6 +9,7 @@ use anchor_client::{
         system_instruction::transfer,
     }
 };
+
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
@@ -69,6 +70,23 @@ impl PumpFun {
         }
     }
 
+    //Gets or creates an associated token account for a keypair TODO: Use this serialized to all accounts and pass it to the lut 
+    pub fn get_ata(&self, pubkey: &Pubkey, mint: &Pubkey) -> Pubkey {
+        let ata: Pubkey = get_associated_token_address(&pubkey, mint);
+        ata
+    }
+
+    //TODO: Use this serialized to all accounts and send as single tx and wait for confirmation before proceeding with the buy
+    pub fn create_ata(&self, wallet: &Pubkey, mint: &Pubkey) -> Instruction {
+        let create_ata_ix = create_associated_token_account(
+            &self.payer.pubkey(), // Admin pays for account creation
+            wallet,               // Wallet that will own the ATA
+            mint,
+            &pumpfun::constants::accounts::TOKEN_PROGRAM,
+        );
+        create_ata_ix
+    }
+
     /// Creates a new token with metadata by uploading metadata to IPFS and initializing on-chain accounts
     ///
     /// # Arguments
@@ -120,9 +138,7 @@ impl PumpFun {
         with_stimulate: bool,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate buy amounts
-        let global_account = self.get_global_account().await?;
-         //Problem here. The bonding curve account is not found. 
-     
+        let global_account = self.get_global_account().await.unwrap();
         let buy_amount = match with_stimulate {
             true => self.bonding_curve.get_buy_price(amount_sol).unwrap(),
             false => {
@@ -306,9 +322,16 @@ impl PumpFun {
             .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
-        pumpfun::accounts::GlobalAccount::try_from_slice(&account.data)
-            .map_err(pumpfun::error::ClientError::BorshError)
+        let data_array: &[u8; 512] = account.data.as_slice().try_into().unwrap();
+        match pumpfun::accounts::GlobalAccount::deserialize(&mut &data_array[..]) {
+            Ok(global_account) => Ok(global_account),
+            Err(e) => {
+                println!("Borsh deserialization error: {:?}", e);
+                Err(pumpfun::error::ClientError::BorshError(e))
+            }
+        }
     }
+
 
 
     /// Gets the Program Derived Address (PDA) for the global state account

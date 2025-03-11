@@ -122,7 +122,7 @@ pub async fn process_bundle(
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let tx = build_transaction(&client, &instructions, vec![&admin_kp], address_lookup_table_account.clone());
+    let tx = build_transaction(&client, &instructions, &vec![&admin_kp], address_lookup_table_account.clone());
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
@@ -232,6 +232,7 @@ pub async fn process_bundle(
         // Use a HashSet to deduplicate signers
         let mut unique_signers = HashSet::new();
 
+
         for ix in &packed_tx.instructions {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
                 unique_signers.insert(acc.pubkey);
@@ -251,7 +252,7 @@ pub async fn process_bundle(
         let tx = build_transaction(
             &client,
             &packed_tx.instructions,
-            tx_signers.clone(),
+            &tx_signers.clone(),
             address_lookup_table_account.clone(),
         );
 

@@ -359,7 +359,7 @@ impl HandlerManager {
                         }
                     }
                     
-                    let tx = build_transaction(&client, &tx.instructions, tx_signers, address_lookup_table_account.clone());
+                    let tx = build_transaction(&client, &tx.instructions, &tx_signers, address_lookup_table_account.clone());
                     ready_txs.push(tx);
                 }
                 ready_txs
