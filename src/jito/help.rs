@@ -104,10 +104,10 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             continue;
         }
 
-        let final_buy_amount = keypair.amount - to_subtract;
+        let final_buy_amount = balance - to_subtract;
 
         //Return buy instructions
-        let new_ixs =pumpfun_client
+        let new_ixs = pumpfun_client
         .buy_ixs(mint_pubkey, &keypair.keypair, final_buy_amount, None, transactions.len() < MAX_TX_PER_BUNDLE)
         .await
         .unwrap();
