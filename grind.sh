@@ -16,7 +16,7 @@ if [[ -n $(ls -A) ]]; then
 fi
 
 # Run the solana-keygen command with multiple threads
-solana-keygen grind --ends-with pump:1
+solana-keygen grind --ends-with p:1
 
 # Check if the key was generated successfully
 if [[ $? -eq 0 ]]; then
