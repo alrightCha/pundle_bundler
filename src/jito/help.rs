@@ -17,7 +17,8 @@ use std::sync::Arc;
 use crate::params::{CreateTokenMetadata, KeypairWithAmount};
 use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
-
+use solana_client::rpc_config::RpcSimulateTransactionConfig;
+use solana_sdk::commitment_config::CommitmentConfig;
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
 dev_keypair_with_amount: KeypairWithAmount,
@@ -236,6 +237,28 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
     ---> Goal is to ensure that the first bundle passes, second bundles
 
      */
+
+     let config = RpcSimulateTransactionConfig {
+        sig_verify: true,
+        replace_recent_blockhash: false, // Disable blockhash replacement
+        commitment: Some(CommitmentConfig::finalized()),
+        ..Default::default()
+    };
+
+    for tx in transactions.iter() {
+        match client.simulate_transaction_with_config(tx, config.clone()) {
+            Ok(sim_result) => {
+                if let Some(err) = sim_result.value.err {
+                eprintln!("❌ Transaction failed simulation: {:?}", err);
+            } else {
+                    println!("✅ Transaction simulation successful");
+                }
+            }
+            Err(e) => {
+                eprintln!("🚨 Transaction simulation error: {:?}", e);
+            }
+        }
+    }
 
     transactions
 }
