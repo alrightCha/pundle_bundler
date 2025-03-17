@@ -14,7 +14,7 @@ use solana_sdk::{
 use std::collections::{HashMap, HashSet};
 use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL};
 
-pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mint_pubkey: &Pubkey, lut_pubkey: Pubkey, pumpfun_client: PumpFun, client: RpcClient) -> Vec<VersionedTransaction> {
+pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, mint_pubkey: &Pubkey, lut_pubkey: Pubkey, pumpfun_client: PumpFun, client: RpcClient) -> Vec<VersionedTransaction> {
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
     let raw_account = client.get_account(&lut_pubkey).unwrap();
@@ -28,7 +28,6 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
     print!("LUT: {:?}", address_lookup_table_account);
     
     let mut signers_map: HashMap<Pubkey, &Keypair> = HashMap::new();
-
 
     for keypair in all_keypairs.iter() {
         signers_map.insert(keypair.pubkey(), keypair);
@@ -63,7 +62,6 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
         .is_bonding_curve_complete;
 
     for (index, keypair) in all_keypairs.iter().enumerate() {
-        
         let balance = client.get_balance(&keypair.pubkey()).unwrap();
         if balance < 1_900_000 {
             println!(
@@ -114,6 +112,9 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
             if let Some(kp) = all_keypairs.iter().find(|kp| kp.pubkey() == signer) {
                 tx_signers.push(kp);
             }
+            if signer == admin_keypair.pubkey() {
+                tx_signers.push(&admin_keypair);
+            }
         }
 
         for ix in &new_ixs {
@@ -131,6 +132,9 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
         for signer in maybe_ix_unique_signers {
             if let Some(kp) = all_keypairs.iter().find(|kp| kp.pubkey() == signer) {
                 maybe_ix_tx_signers.push(kp);
+            }
+            if signer == admin_keypair.pubkey() {
+                maybe_ix_tx_signers.push(&admin_keypair);
             }
         }
 
@@ -188,6 +192,9 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
         for signer in unique_signers {
             if let Some(kp) = all_keypairs.iter().find(|kp| kp.pubkey() == signer) {
                 tx_signers.push(kp);
+            }
+            if signer == admin_keypair.pubkey() {
+                tx_signers.push(&admin_keypair);
             }
         }
         transactions.push(build_transaction(
