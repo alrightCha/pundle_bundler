@@ -137,7 +137,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
         let maybe_tx = build_transaction(
             &client,
             &all_ixs,
-            &maybe_ix_tx_signers,
+            maybe_ix_tx_signers,
             address_lookup_table_account.clone(),
         );
 
@@ -148,7 +148,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
             let new_tx = build_transaction(
                 &client,
                 &current_tx_ixs,
-                &tx_signers,
+                tx_signers,
                 address_lookup_table_account.clone(),
             );
             transactions.push(new_tx);
@@ -191,7 +191,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
         transactions.push(build_transaction(
             &client,
             &current_tx_ixs,
-            &tx_signers,
+            tx_signers,
             address_lookup_table_account.clone(),
         ));
     }

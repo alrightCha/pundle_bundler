@@ -91,7 +91,7 @@ pub fn transfer_ix(from: &Pubkey, to: &Pubkey, amount: u64) -> Instruction {
 pub fn build_transaction(
     client: &RpcClient,
     ixes: &[Instruction],
-    keypairs: &Vec<&Keypair>, // Accept a vector of keypairs
+    keypairs: Vec<&Keypair>, // Accept a vector of keypairs
     lut: AddressLookupTableAccount,
 ) -> VersionedTransaction {
     // Ensure there is at least one keypair to use as the payer
@@ -99,19 +99,8 @@ pub fn build_transaction(
         panic!("At least one keypair is required to build a transaction.");
     }
 
-    // Find first keypair with balance > 0.02 SOL
-    let min_balance = 20_000_000; // 0.02 SOL in lamports
-
-    let payer = keypairs.iter()
-        .find(|kp| {
-            match client.get_balance(&kp.pubkey()) {
-                Ok(balance) => balance >= min_balance,
-                Err(_) => false
-            }
-        })
-        .unwrap_or_else(|| {
-            panic!("No keypair found with sufficient balance (>0.02 SOL)")
-        });
+    // Use the first keypair as the payer
+    let payer = keypairs[0];
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
     
@@ -123,13 +112,15 @@ pub fn build_transaction(
     ).unwrap();
     
     // Compile the message with the payer's public key
+    
     let versioned_message = VersionedMessage::V0(message);
 
     // Create a vector of references to the keypairs for signing
     let signers: Vec<&Keypair> = keypairs.iter().map(|kp| *kp).collect();
     println!("Signers: {:?}", signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
     // Create the transaction with all keypairs as signers
-    let tx: VersionedTransaction = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
+    let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
+
     tx
 }
 

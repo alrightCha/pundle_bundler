@@ -168,13 +168,13 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             }
         }
 
-        let maybe_tx = build_transaction(&client, &all_ixs, &maybe_ix_tx_signers, address_lookup_table_account.clone());
+        let maybe_tx = build_transaction(&client, &all_ixs, maybe_ix_tx_signers, address_lookup_table_account.clone());
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
 
         //Add new ixs to current tx instructions if size below 1232, else create new tx and reset current tx instructions, and add new ixs to it
         if size > 1232 {
-            let new_tx = build_transaction(&client, &current_tx_ixs, &tx_signers, address_lookup_table_account.clone());
+            let new_tx = build_transaction(&client, &current_tx_ixs, tx_signers, address_lookup_table_account.clone());
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
@@ -213,7 +213,7 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             }
         }
 
-        transactions.push(build_transaction(&client, &current_tx_ixs, &tx_signers, address_lookup_table_account.clone()));
+        transactions.push(build_transaction(&client, &current_tx_ixs, tx_signers, address_lookup_table_account.clone()));
     }
 
     /*
