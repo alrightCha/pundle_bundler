@@ -15,6 +15,8 @@ use std::collections::{HashMap, HashSet};
 use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL};
 
 pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, mint_pubkey: &Pubkey, lut_pubkey: Pubkey, pumpfun_client: PumpFun, client: RpcClient) -> Vec<VersionedTransaction> {
+    println!("Selling all txs...");
+    println!("All Keypairs: {:?}", all_keypairs.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
     let raw_account = client.get_account(&lut_pubkey).unwrap();
@@ -150,6 +152,12 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
 
         //Add new ixs to current tx instructions if size below 1232, else create new tx and reset current tx instructions, and add new ixs to it
         if size > 1232 {
+            println!("Signer added to sell instruction: {:?}", tx_signers);
+            for ix in &current_tx_ixs {
+                for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
+                    println!("Required signer: {:?}", acc.pubkey);
+                }
+            }
             let new_tx = build_transaction(
                 &client,
                 &current_tx_ixs,
@@ -191,12 +199,14 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
         let mut tx_signers: Vec<&Keypair> = Vec::new();
         for signer in unique_signers {
             if let Some(kp) = all_keypairs.iter().find(|kp| kp.pubkey() == signer) {
+                println!("Signer required to sell instruction: {:?}", kp.pubkey());
                 tx_signers.push(kp);
             }
             if signer == admin_keypair.pubkey() {
                 tx_signers.push(&admin_keypair);
             }
         }
+        println!("Signer added to sell instruction: {:?}", tx_signers);
         transactions.push(build_transaction(
             &client,
             &current_tx_ixs,
