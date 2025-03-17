@@ -91,8 +91,9 @@ pub fn transfer_ix(from: &Pubkey, to: &Pubkey, amount: u64) -> Instruction {
 pub fn build_transaction(
     client: &RpcClient,
     ixes: &[Instruction],
-    keypairs: Vec<&Keypair>, // Accept a vector of keypairs
+    keypairs: Vec<&Keypair>, // Accept a vector of keypair
     lut: AddressLookupTableAccount,
+    mint: Option<&Keypair>,
 ) -> VersionedTransaction {
     // Ensure there is at least one keypair to use as the payer
     if keypairs.is_empty() {
@@ -100,7 +101,16 @@ pub fn build_transaction(
     }
 
     // Use the first keypair as the payer
-    let payer = keypairs[1];
+    let payer = match mint {
+        Some(mint) => {
+            if mint.pubkey() == keypairs[0].pubkey() {
+                keypairs[1]
+            } else {
+                keypairs[0]
+            }
+        },
+        None => keypairs[0],
+    };
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
     let message = Message::try_compile(

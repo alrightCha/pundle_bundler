@@ -30,8 +30,6 @@ use crate::pumpfun::utils::get_splits;
 use crate::pumpfun::pump::PumpFun;
 use crate::jupiter::swap::swap_ixs;
 use crate::solana::recursive_pay::recursive_pay;
-use crate::solana::utils::build_transaction;
-use crate::solana::utils::get_ata_balance;
 
 use tokio::spawn;
 

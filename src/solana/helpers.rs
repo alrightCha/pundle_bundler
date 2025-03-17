@@ -139,6 +139,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
             &all_ixs,
             maybe_ix_tx_signers,
             address_lookup_table_account.clone(),
+            None,
         );
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
@@ -150,6 +151,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
                 &current_tx_ixs,
                 tx_signers,
                 address_lookup_table_account.clone(),
+                None,
             );
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
@@ -193,6 +195,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair,all_keypairs: Vec<&Keypair>, mi
             &current_tx_ixs,
             tx_signers,
             address_lookup_table_account.clone(),
+            None,
         ));
     }
 

@@ -130,7 +130,7 @@ pub async fn process_bundle(
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let tx = build_transaction(&client, &instructions, vec![&admin_kp], address_lookup_table_account.clone());
+    let tx = build_transaction(&client, &instructions, vec![&admin_kp], address_lookup_table_account.clone(), None);
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
