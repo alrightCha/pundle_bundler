@@ -6,6 +6,7 @@ mod params;
 mod pumpfun;
 mod solana;
 
+use pumpfun_cpi::instruction::Create;
 use anchor_spl::associated_token::spl_associated_token_account;
 use config::{BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, MAX_TX_PER_BUNDLE, JITO_TIP_SIZE};
 use dotenv::dotenv;
@@ -163,10 +164,11 @@ async fn main() {
         })
         .collect();
 
-    let token_metadata = CreateTokenMetadata {
-        name: "yrdy".to_string(),
-        ticker: "yrdy".to_string(),
-        uri: "https://ipfs.io/ipfs/QmRZKP3LWBiDdeoigMXkndnLdxDzzry6Cv8HB4tKRm5mDW".to_string(),
+    let token_metadata = Create {
+        _name: "yrdy".to_string(),
+        _symbol: "yrdy".to_string(),
+        _uri: "https://ipfs.io/ipfs/QmRZKP3LWBiDdeoigMXkndnLdxDzzry6Cv8HB4tKRm5mDW".to_string(),
+        _creator: dev_with_amount.keypair.pubkey(),
     };
 
     //TOP UP SHOULD BE HERE
@@ -183,7 +185,7 @@ async fn main() {
 
     let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
-    let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata).await.unwrap();
+    let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata);
 
     let tip_ix = jito
     .get_tip_ix(dev_with_amount.keypair.pubkey())
@@ -209,11 +211,10 @@ async fn main() {
     let set_compute_unit_price_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
     current_tx_ixs.push(set_compute_unit_price_ix);
     current_tx_ixs.push(mint_ix);
-    // current_tx_ixs.extend(dev_ix);
-    // current_tx_ixs.push(tip_ix);
+    current_tx_ixs.extend(dev_ix);
+    current_tx_ixs.push(tip_ix);
 
-    /*
-        for (index, keypair) in others_with_amount.iter().enumerate() {
+    for (index, keypair) in others_with_amount.iter().enumerate() {
         
         let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
         if balance < keypair.amount {
@@ -277,14 +278,14 @@ async fn main() {
             }
         }
 
-        let maybe_tx = build_transaction(&client, &all_ixs, &maybe_ix_tx_signers, address_lookup_table_account.clone());
+        let maybe_tx = build_transaction(&client, &all_ixs, maybe_ix_tx_signers, address_lookup_table_account.clone());
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
 
         //Add new ixs to current tx instructions if size below 1232, else create new tx and reset current tx instructions, and add new ixs to it
         if size > 1232 {
             println!("Instructions: {:?}", current_tx_ixs);
-            let new_tx = build_transaction(&client, &current_tx_ixs, &tx_signers, address_lookup_table_account.clone());
+            let new_tx = build_transaction(&client, &current_tx_ixs, tx_signers, address_lookup_table_account.clone());
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
@@ -301,8 +302,6 @@ async fn main() {
         println!("With {} instructions", current_tx_ixs.len());
         println!("Transaction size: {:?}", size);
     }
-
-     */
 
     if current_tx_ixs.len() > 0 {
         let mut unique_signers: HashSet<Pubkey> = HashSet::new();
@@ -339,8 +338,8 @@ async fn main() {
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
                 if let Some(err) = sim_result.value.err {
-                eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
-            } else {
+                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
+                } else {
                     println!("✅ Transaction simulation successful");
                 }
             }

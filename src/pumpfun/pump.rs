@@ -1,28 +1,33 @@
-use crate::{config::{TOKEN_AMOUNT_MULTIPLIER, ADMIN_PUBKEY}, params::CreateTokenMetadata};
+use crate::{
+    config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER},
+    params::CreateTokenMetadata,
+};
+use anchor_client::anchor_lang::InstructionData;
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{
+        instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
         signature::Keypair,
         signer::Signer,
-        instruction::Instruction,
         system_instruction::transfer,
-    }
+    },
 };
-
+use pumpfun_cpi::instruction::Create;
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
-use borsh::BorshDeserialize;
+
+use borsh::{BorshDeserialize, BorshSerialize};
 use pumpfun::instruction;
+use pumpfun::PumpFun as PumpFun2;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};
-
-use crate::pumpfun::old_bc::BondingCurve;
-use crate::params::PoolInformation;
 use crate::config::RPC_URL;
+use crate::params::PoolInformation;
+use crate::pumpfun::old_bc::BondingCurve;
 /// Configuration for priority fee compute unit parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriorityFee {
@@ -55,9 +60,7 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns a new PumpFun client instance configured with the provided parameters
-    pub fn new(
-        payer: Arc<Keypair>
-    ) -> Self {
+    pub fn new(payer: Arc<Keypair>) -> Self {
         // Create Solana RPC Client with either WS or HTTP endpoint
         let rpc: RpcClient = RpcClient::new(RPC_URL.to_string());
 
@@ -70,7 +73,7 @@ impl PumpFun {
         }
     }
 
-    //Gets or creates an associated token account for a keypair TODO: Use this serialized to all accounts and pass it to the lut 
+    //Gets or creates an associated token account for a keypair TODO: Use this serialized to all accounts and pass it to the lut
     pub fn get_ata(&self, pubkey: &Pubkey, mint: &Pubkey) -> Pubkey {
         let ata: Pubkey = get_associated_token_address(&pubkey, mint);
         ata
@@ -80,7 +83,7 @@ impl PumpFun {
     pub fn create_ata(&self, payer: &Pubkey, wallet: &Pubkey, mint: &Pubkey) -> Instruction {
         let create_ata_ix = create_associated_token_account(
             &payer, // Admin pays for account creation
-            wallet,               // Wallet that will own the ATA
+            wallet, // Wallet that will own the ATA
             mint,
             &pumpfun::constants::accounts::TOKEN_PROGRAM,
         );
@@ -98,23 +101,38 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns the transaction signature if successful, or a ClientError if the operation fails
-    pub async fn create_instruction(
+    pub fn create_instruction(
         &self,
         mint: &Keypair,
-        metadata: CreateTokenMetadata,
-    ) -> Result<Instruction, pumpfun::error::ClientError> {
-        //Add to instruction the payer, and mint, add to signer the payer and mint as well !
-        let create_ix: Instruction = pumpfun::instruction::create(
-            &self.payer,
-            mint,
-            pumpfun::cpi::instruction::Create {
-                _name: metadata.name,
-                _symbol: metadata.ticker,
-                _uri: metadata.uri,
-            },
-        );
-
-        Ok(create_ix)
+        args: Create,
+    ) -> Instruction {
+        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(&mint.pubkey()).unwrap();
+        Instruction::new_with_bytes(
+            pumpfun::constants::accounts::PUMPFUN,
+            &args.data(),
+            vec![
+                AccountMeta::new(mint.pubkey(), true),
+                AccountMeta::new(PumpFun2::get_mint_authority_pda(), false),
+                AccountMeta::new(bonding_curve, false),
+                AccountMeta::new(
+                    get_associated_token_address(&bonding_curve, &mint.pubkey()),
+                    false,
+                ),
+                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::MPL_TOKEN_METADATA, false),
+                AccountMeta::new(PumpFun2::get_metadata_pda(&mint.pubkey()), false),
+                AccountMeta::new(self.payer.pubkey(), true),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(
+                    pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM,
+                    false,
+                ),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::RENT, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
+            ],
+        )
     }
 
     /// Buys tokens from a bonding curve by spending SOL
@@ -147,8 +165,10 @@ impl PumpFun {
             }
         };
 
-        let buy_amount_with_slippage =
-            pumpfun::utils::calculate_with_slippage_buy(amount_sol, slippage_basis_points.unwrap_or(500));
+        let buy_amount_with_slippage = pumpfun::utils::calculate_with_slippage_buy(
+            amount_sol,
+            slippage_basis_points.unwrap_or(500),
+        );
 
         println!("Amount sol: {:?}", amount_sol);
         println!("Buy amount: {:?}", buy_amount);
@@ -182,7 +202,7 @@ impl PumpFun {
         Ok(instructions)
     }
 
-       /// Sells tokens back to the bonding curve in exchange for SOL
+    /// Sells tokens back to the bonding curve in exchange for SOL
     ///
     /// # Arguments
     ///
@@ -216,8 +236,8 @@ impl PumpFun {
                 } else {
                     requested_amount
                 }
-            },
-            None => balance_u64
+            }
+            None => balance_u64,
         };
 
         let global_account = self.get_global_account().await?;
@@ -234,7 +254,7 @@ impl PumpFun {
 
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
         instructions.push(priority_fee_ix);
-        
+
         // Add sell instruction
         let sell_ix = instruction::sell(
             &keypair,
@@ -260,9 +280,9 @@ impl PumpFun {
         Ok(instructions)
     }
 
-    //Sells all tokens in the keypair 
+    //Sells all tokens in the keypair
     pub async fn sell_all_ix(
-        &self, 
+        &self,
         mint: &Pubkey,
         keypair: &Keypair,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
@@ -271,24 +291,23 @@ impl PumpFun {
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
         let global_account = self.get_global_account().await?;
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
-        
+
         let min_sol = bonding_curve_account
-                  .get_sell_price(balance_u64, global_account.fee_basis_points)
-                  .map_err(pumpfun::error::ClientError::BondingCurveError)?;
+            .get_sell_price(balance_u64, global_account.fee_basis_points)
+            .map_err(pumpfun::error::ClientError::BondingCurveError)?;
 
         // 500 basis points = 5% slippage
         // Setting slippage to 10000 (100%) means you'll accept any price above min_sol * 0,
         // which could result in getting much less SOL than expected
         let min_sol_output = pumpfun::utils::calculate_with_slippage_sell(
-            min_sol,
-            3000, // 30% slippage - you'll get at least 70% of min_sol
+            min_sol, 3000, // 30% slippage - you'll get at least 70% of min_sol
         );
 
         let mut instructions: Vec<Instruction> = Vec::new();
-        
+
         let sell_ix = instruction::sell(
-            &keypair, 
-            mint, 
+            &keypair,
+            mint,
             &global_account.fee_recipient,
             pumpfun::cpi::instruction::Sell {
                 _amount: balance_u64,
@@ -313,7 +332,9 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns the deserialized GlobalAccount if successful, or a ClientError if the operation fails
-    pub async fn get_global_account(&self) -> Result<pumpfun::accounts::GlobalAccount, pumpfun::error::ClientError> {
+    pub async fn get_global_account(
+        &self,
+    ) -> Result<pumpfun::accounts::GlobalAccount, pumpfun::error::ClientError> {
         let global: Pubkey = Self::get_global_pda();
 
         let account = self
@@ -332,8 +353,6 @@ impl PumpFun {
         }
     }
 
-
-
     /// Gets the Program Derived Address (PDA) for the global state account
     ///
     /// # Returns
@@ -344,7 +363,6 @@ impl PumpFun {
         let program_id: &Pubkey = &pumpfun::cpi::ID;
         Pubkey::find_program_address(seeds, program_id).0
     }
-
 
     /// Gets the Program Derived Address (PDA) for a token's bonding curve account
     ///
@@ -362,7 +380,6 @@ impl PumpFun {
         pda.map(|pubkey| pubkey.0)
     }
 
-
     /// Gets a token's bonding curve account data containing pricing parameters
     ///
     /// # Arguments
@@ -376,8 +393,8 @@ impl PumpFun {
         &self,
         mint: &Pubkey,
     ) -> Result<pumpfun::accounts::BondingCurveAccount, pumpfun::error::ClientError> {
-        let bonding_curve_pda =
-            Self::get_bonding_curve_pda(mint).ok_or(pumpfun::error::ClientError::BondingCurveNotFound)?;
+        let bonding_curve_pda = Self::get_bonding_curve_pda(mint)
+            .ok_or(pumpfun::error::ClientError::BondingCurveNotFound)?;
 
         let account = self
             .rpc
@@ -389,10 +406,15 @@ impl PumpFun {
             .map_err(pumpfun::error::ClientError::BorshError)
     }
 
-    pub async fn get_pool_information(&self, mint: &Pubkey) -> Result<PoolInformation, pumpfun::error::ClientError> {
+    pub async fn get_pool_information(
+        &self,
+        mint: &Pubkey,
+    ) -> Result<PoolInformation, pumpfun::error::ClientError> {
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
         let current_mc = bonding_curve_account.get_market_cap_sol();
-        let sell_price = bonding_curve_account.get_sell_price(100000 * TOKEN_AMOUNT_MULTIPLIER, 500).unwrap(); // price per 10k tokens
+        let sell_price = bonding_curve_account
+            .get_sell_price(100000 * TOKEN_AMOUNT_MULTIPLIER, 500)
+            .unwrap(); // price per 10k tokens
         let is_bonding_curve_complete = bonding_curve_account.complete;
         let reserve_sol = bonding_curve_account.real_sol_reserves;
         let reserve_token = bonding_curve_account.real_token_reserves;
@@ -407,3 +429,4 @@ impl PumpFun {
         Ok(pool_information)
     }
 }
+

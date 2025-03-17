@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::instruction::Instruction;
-
+use borsh::{BorshDeserialize, BorshSerialize};
 //Has requester public key, token metadata, dev buy amount and wallets buy amount
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,11 +77,12 @@ pub struct WithdrawAllSolRequest {
     pub mint: String,
 }
 
-#[derive(Deserialize)]
+#[derive(BorshDeserialize, BorshSerialize, Debug, Clone)]
 pub struct CreateTokenMetadata {
     pub name: String,
     pub ticker: String,
     pub uri: String,
+    pub creator: Pubkey,
 }
 
 #[derive(Deserialize)]

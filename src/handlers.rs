@@ -15,9 +15,9 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::commitment_config::CommitmentLevel;
 use std::collections::HashSet;
 use std::time::Duration;
+use pumpfun_cpi::instruction::Create;
 
 use crate::params::{
-    CreateTokenMetadata,
     GetPoolInformationRequest, 
     PoolInformation, 
     SellAllRequest, 
@@ -104,10 +104,11 @@ impl HandlerManager {
         
         let dev_keypair = create_keypair(&requester_pubkey).unwrap();
         
-        let token_metadata : CreateTokenMetadata = CreateTokenMetadata {
-            name: payload.name,
-            ticker: payload.symbol,
-            uri: payload.uri
+        let token_metadata  = Create {
+            _name: payload.name,
+            _symbol: payload.symbol,
+            _uri: payload.uri,
+            _creator: dev_keypair.pubkey(),
         };
 
         let mint = load_keypair(&format!("accounts/{}/{}.json", requester_pubkey, mint_pubkey)).unwrap();

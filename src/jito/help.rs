@@ -19,6 +19,7 @@ use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_client::rpc_config::RpcSimulateTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
+use pumpfun_cpi::instruction::Create;
 
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -28,7 +29,7 @@ requester_pubkey: String,
 token_metadata: CreateTokenMetadata
 */
 
-pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: &Keypair, others_with_amount: Vec<KeypairWithAmount>, lut_pubkey: Pubkey, mint_pubkey: Pubkey, token_metadata: CreateTokenMetadata) -> Vec<VersionedTransaction> {
+pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: &Keypair, others_with_amount: Vec<KeypairWithAmount>, lut_pubkey: Pubkey, mint_pubkey: Pubkey, token_metadata: Create) -> Vec<VersionedTransaction> {
     println!("Building bundle txs...");
     let client = RpcClient::new(RPC_URL);
 
@@ -64,9 +65,7 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
     let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
     let mint_ix = pumpfun_client
-        .create_instruction(&mint_keypair, token_metadata)
-        .await
-        .unwrap();
+        .create_instruction(&mint_keypair, token_metadata);
 
     let tip_ix = jito
     .get_tip_ix(dev_with_amount.keypair.pubkey())

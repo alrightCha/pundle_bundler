@@ -100,10 +100,9 @@ pub fn build_transaction(
     }
 
     // Use the first keypair as the payer
-    let payer = keypairs[0];
+    let payer = keypairs[1];
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
-    
     let message = Message::try_compile(
         &payer.pubkey(),
         ixes,

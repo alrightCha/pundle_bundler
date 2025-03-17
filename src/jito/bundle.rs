@@ -18,12 +18,12 @@ use solana_client::rpc_client::RpcClient;
 use crate::jito::jito::JitoBundle;
 use crate::pumpfun::pump::PumpFun;
 use crate::config::{RPC_URL, JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL};
-use crate::params::{CreateTokenMetadata, KeypairWithAmount};
+use crate::params::KeypairWithAmount;
 use crate::solana::{
     utils::{load_keypair, transfer_ix, build_transaction}, 
     lut::{create_lut, extend_lut, verify_lut_ready},
 };
-
+use pumpfun_cpi::instruction::Create;
 use super::help::build_bundle_txs;
 
 pub async fn process_bundle(
@@ -31,7 +31,7 @@ pub async fn process_bundle(
     dev_keypair_with_amount: KeypairWithAmount,
     mint: &Keypair,
     requester_pubkey: String,
-    token_metadata: CreateTokenMetadata
+    token_metadata: Create
 ) -> Result<Pubkey, Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
