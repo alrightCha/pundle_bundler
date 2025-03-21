@@ -206,7 +206,11 @@ pub async fn process_bundle(
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
-    tokio::time::sleep(Duration::from_secs(20)).await; //Sleep for 20 seconds to ensure that lut extended + that addresses have their sol received
+    let mut dev_balance =  client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+    while dev_balance < dev_keypair_with_amount.amount {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        dev_balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+    }
 
     //Step 4: Create and extend lut for the bundle
     let other_balances = keypairs_with_amount

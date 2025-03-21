@@ -8,6 +8,7 @@ use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcSimulateTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
     address_lookup_table::AddressLookupTableAccount,
@@ -91,6 +92,8 @@ pub async fn build_bundle_txs(
     let mut current_tx_ixs: Vec<Instruction> = Vec::new();
     current_tx_ixs.push(mint_ix);
     current_tx_ixs.extend(dev_ix);
+    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+    current_tx_ixs.push(priority_fee_ix);
 
     for (index, keypair) in others_with_amount.iter().enumerate() {
         let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
@@ -200,6 +203,8 @@ pub async fn build_bundle_txs(
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
+            let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000_000);
+            current_tx_ixs.push(priority_fee_ix);
             current_tx_ixs.extend(new_ixs);
             if index % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
@@ -252,16 +257,14 @@ pub async fn build_bundle_txs(
         }
 
         //If the current transactions are below 5, add a tip instruction to the current tx instructions, which is the last transaction
-        if transactions.len() < 5 {
-            println!("Adding tip ix to current tx instructions");
-            let tip_ix = jito
-                .get_tip_ix(dev_with_amount.keypair.pubkey())
-                .await
-                .unwrap();
-            maybe_last_ixs_with_tip.push(tip_ix);
-        }
+        println!("Adding tip ix to current tx instructions");
+        let tip_ix = jito
+            .get_tip_ix(dev_with_amount.keypair.pubkey())
+            .await
+            .unwrap();
+        maybe_last_ixs_with_tip.push(tip_ix);
 
-        //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between 
+        //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between
 
         let mut maybe_last_tx_signers: Vec<&Keypair> = Vec::new();
 
