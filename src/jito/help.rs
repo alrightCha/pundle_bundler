@@ -222,15 +222,6 @@ pub async fn build_bundle_txs(
 
     if current_tx_ixs.len() > 0 {
         let mut unique_signers: HashSet<Pubkey> = HashSet::new();
-        //If the current transactions are below 5, add a tip instruction to the current tx instructions, which is the last transaction
-        if transactions.len() < 5 {
-            println!("Adding tip ix to current tx instructions");
-            let tip_ix = jito
-                .get_tip_ix(dev_with_amount.keypair.pubkey())
-                .await
-                .unwrap();
-            current_tx_ixs.push(tip_ix);
-        }
 
         for ix in &current_tx_ixs {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
@@ -254,13 +245,70 @@ pub async fn build_bundle_txs(
             }
         }
 
-        transactions.push(build_transaction(
+        let mut maybe_last_ixs_with_tip: Vec<Instruction> = Vec::new();
+
+        for ix in &current_tx_ixs {
+            maybe_last_ixs_with_tip.push(ix.clone());
+        }
+
+        //If the current transactions are below 5, add a tip instruction to the current tx instructions, which is the last transaction
+        if transactions.len() < 5 {
+            println!("Adding tip ix to current tx instructions");
+            let tip_ix = jito
+                .get_tip_ix(dev_with_amount.keypair.pubkey())
+                .await
+                .unwrap();
+            maybe_last_ixs_with_tip.push(tip_ix);
+        }
+
+        //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between 
+        let maybe_last_tx = build_transaction(
             &client,
-            &current_tx_ixs,
-            tx_signers,
+            &maybe_last_ixs_with_tip,
+            tx_signers.clone(),
             address_lookup_table_account.clone(),
             Some(&mint_keypair),
-        ));
+        );
+
+        let tx_size: usize = bincode::serialized_size(&maybe_last_tx).unwrap() as usize;
+
+        if tx_size > 1232 {
+            let before_last_tx = build_transaction(
+                &client,
+                &current_tx_ixs,
+                tx_signers.clone(),
+                address_lookup_table_account.clone(),
+                Some(&mint_keypair),
+            );
+
+            transactions.push(before_last_tx);
+
+            let tip_ix = jito
+                .get_tip_ix(dev_with_amount.keypair.pubkey())
+                .await
+                .unwrap();
+
+            let ixs: Vec<Instruction> = vec![tip_ix];
+
+            let last_tx = build_transaction(
+                &client,
+                &ixs,
+                tx_signers,
+                address_lookup_table_account.clone(),
+                Some(&dev_with_amount.keypair),
+            );
+
+            transactions.push(last_tx);
+        }else{
+            let last_tx = build_transaction(
+                &client,
+                &current_tx_ixs,
+                tx_signers,
+                address_lookup_table_account.clone(),
+                Some(&mint_keypair),
+            );
+            transactions.push(last_tx);
+        }
     }
 
     /*

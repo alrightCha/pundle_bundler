@@ -106,8 +106,6 @@ impl JitoBundle {
         // UUID for the bundle
         let uuid = None;
     
-        // Send bundle using Jito SDK
-         println!("Sending bundle with 1 transaction...");
          let response = self.jito_sdk.send_bundle(Some(bundle), uuid).await?;
      
          // Extract bundle UUID from response
