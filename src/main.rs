@@ -50,7 +50,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Admin keypair loaded: {}", admin_keypair.pubkey());
 
     refund_keypairs("EzYBEUw6FL9h6hpT1fM91TuX9DsTwA7ASn1Gs9viBsbr".to_string(), admin_keypair.pubkey().to_string(), "".to_string()).await;
- 
 
     let handler_manager = Arc::new(Mutex::new(HandlerManager::new(admin_keypair)));
     //Storing LUT to access it across handlers 

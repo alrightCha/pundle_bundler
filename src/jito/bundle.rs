@@ -143,7 +143,26 @@ pub async fn process_bundle(
     //Step 4: Create and extend lut for the bundle 
     let other_balances = keypairs_with_amount.iter().map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap()).collect::<Vec<u64>>();
     println!("Other balances: {:?}", other_balances);
+    let balances_to_buy = other_balances.iter().map(|balance| balance - 1_900_000).collect::<Vec<u64>>();
+    println!("Balances to buy: {:?}", balances_to_buy);
 
+    // Print difference between intended buy amount and actual balance
+    for (i, keypair) in keypairs_with_amount.iter().enumerate() {
+        let actual_balance = other_balances[i];
+        let intended_amount = keypair.amount;
+        println!(
+            "Wallet {}: Intended buy amount: {}, Actual balance: {}, Difference: {}",
+            keypair.keypair.pubkey(),
+            intended_amount,
+            actual_balance,
+            if actual_balance >= intended_amount {
+                actual_balance - intended_amount
+            } else {
+                println!("WARNING: Actual balance less than intended buy amount!");
+                intended_amount - actual_balance
+            }
+        );
+    }
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction 
     let mint_pubkey = mint.pubkey();
