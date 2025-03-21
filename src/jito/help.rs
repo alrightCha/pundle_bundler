@@ -69,7 +69,7 @@ pub async fn build_bundle_txs(
 
     let to_sub_for_dev: u64 = to_subtract.clone() + JITO_TIP_AMOUNT;
 
-    let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
+    let final_dev_buy_amount = dev_with_amount.amount * 94 / 100 - to_sub_for_dev;
 
     let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata);
 
@@ -107,7 +107,7 @@ pub async fn build_bundle_txs(
             continue;
         }
 
-        let final_buy_amount = balance - to_subtract;
+        let final_buy_amount = balance * 94 / 100 - to_subtract;
         //Return buy instructions
         let new_ixs = pumpfun_client
             .buy_ixs(
@@ -333,12 +333,12 @@ pub async fn build_bundle_txs(
                 transactions.push(tip_tx);
                 transactions.push(maybe_last_tx);
             } else {
-                //Case where we have room for split txs within same last batch 
+                //Case where we have room for split txs within same last batch
                 transactions.push(before_last_tx);
                 transactions.push(tip_tx);
             }
         } else {
-            //Case where we added a tip instruction to the last transaction 
+            //Case where we added a tip instruction to the last transaction
             println!("Last transaction is not too big, adding it to transactions");
             transactions.push(maybe_last_tx);
         }
@@ -355,7 +355,7 @@ pub async fn build_bundle_txs(
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
                 if let Some(err) = sim_result.value.err {
-                    eprintln!("❌ Transaction failed simulation: {:?}", err);
+                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
                 } else {
                     println!("✅ Transaction simulation successful");
                 }

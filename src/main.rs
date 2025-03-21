@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler_manager = Arc::new(Mutex::new(HandlerManager::new(admin_keypair)));
     //Storing LUT to access it across handlers 
     let pubkey_to_lut:  Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
+
     //setup app
     let app = Router::new()
         .route("/", get(health_check))
