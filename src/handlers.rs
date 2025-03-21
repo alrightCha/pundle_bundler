@@ -1,3 +1,12 @@
+use crate::jupiter::swap::swap_ixs;
+use crate::params::{
+    GetPoolInformationRequest, PoolInformation, RecursivePayRequest, SellAllRequest, SellResponse,
+    UniqueSellRequest, WithdrawAllSolRequest,
+};
+use crate::pumpfun::pump::PumpFun;
+use crate::pumpfun::utils::get_splits;
+use crate::solana::recursive_pay::recursive_pay;
+use anchor_spl::associated_token::get_associated_token_address;
 use axum::Json;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
@@ -14,15 +23,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use anchor_spl::associated_token::get_associated_token_address;
-use crate::jupiter::swap::swap_ixs;
-use crate::params::{
-    GetPoolInformationRequest, PoolInformation, RecursivePayRequest, SellAllRequest, SellResponse,
-    UniqueSellRequest, WithdrawAllSolRequest,
-};
-use crate::pumpfun::pump::PumpFun;
-use crate::pumpfun::utils::get_splits;
-use crate::solana::recursive_pay::recursive_pay;
 
 use tokio::spawn;
 
@@ -47,16 +47,13 @@ pub async fn health_check() -> &'static str {
 }
 
 pub struct HandlerManager {
-    jito: JitoBundle,
     admin_kp: Keypair,
 }
 
 impl HandlerManager {
     pub fn new(admin_kp: Keypair) -> Self {
         //setup Jito Client
-        let client = RpcClient::new(RPC_URL);
-        let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
-        Self { jito, admin_kp }
+        Self { admin_kp }
     }
 
     //Receive request to create a bundle
@@ -244,50 +241,51 @@ impl HandlerManager {
 
         let payer: Arc<Keypair> = Arc::new(keypair.insecure_clone());
 
-        let pumpfun_client = PumpFun::new(payer);
+        tokio::spawn(async move {
+            let pumpfun_client = PumpFun::new(payer);
 
-        let bonded = pumpfun_client
-            .get_pool_information(&mint_pubkey)
-            .await
-            .unwrap();
+            let bonded = pumpfun_client
+                .get_pool_information(&mint_pubkey)
+                .await
+                .unwrap();
 
-        let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
-            true => {
-                let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
-                swap_ixs
-            }
-            false => {
-                let pump_ixs = pumpfun_client
-                    .sell_ix(&mint_pubkey, &keypair, Some(amount), None, None)
-                    .await
-                    .unwrap();
-                pump_ixs
-            }
-        };
+            let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
+                true => {
+                    let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
+                    swap_ixs
+                }
+                false => {
+                    let pump_ixs = pumpfun_client
+                        .sell_ix(&mint_pubkey, &keypair, Some(amount), None, None)
+                        .await
+                        .unwrap();
+                    pump_ixs
+                }
+            };
 
-        let blockhash = client.get_latest_blockhash().unwrap();
+            let blockhash = client.get_latest_blockhash().unwrap();
 
-        let tx = Transaction::new_signed_with_payer(
-            &sell_ixs,
-            Some(&keypair.pubkey()),
-            &[&keypair],
-            blockhash,
-        );
+            let tx = Transaction::new_signed_with_payer(
+                &sell_ixs,
+                Some(&keypair.pubkey()),
+                &[&keypair],
+                blockhash,
+            );
 
-        let config = RpcSendTransactionConfig {
-            skip_preflight: true,
-            preflight_commitment: Some(CommitmentLevel::Confirmed),
-            encoding: None,
-            max_retries: None,
-            min_context_slot: None,
-        };
+            let config = RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: Some(CommitmentLevel::Confirmed),
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            };
 
-        let signature = client.send_transaction_with_config(&tx, config).unwrap();
-        client
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
-            .unwrap();
-
-        println!("Signature: {:?}", signature);
+            let signature = client.send_transaction_with_config(&tx, config).unwrap();
+            client
+                .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
+                .unwrap();
+            println!("Signature: {:?}", signature);
+        });
 
         Json(SellResponse { success: true })
     }
@@ -370,7 +368,12 @@ impl HandlerManager {
             }
         };
 
-        let _ = self.jito.submit_bundle(txs, mint_pubkey, None).await;
+        tokio::spawn(async move {
+            let client = RpcClient::new(RPC_URL);
+            let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
+
+            let _ = jito.submit_bundle(txs, mint_pubkey, None).await;
+        });
 
         if with_admin_transfer {
             tokio::time::sleep(Duration::from_secs(10)).await; //waiting for amounts to reach wallets
@@ -386,7 +389,9 @@ impl HandlerManager {
     ) -> Json<SellResponse> {
         let requester: String = payload.pubkey;
         let mint: String = payload.mint;
-        let _ = recursive_pay(requester, mint, None, false).await;
+        tokio::spawn(async move {
+            let _ = recursive_pay(requester, mint, None, false).await;
+        });
         Json(SellResponse { success: true })
     }
 
