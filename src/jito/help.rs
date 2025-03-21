@@ -29,9 +29,6 @@ requester_pubkey: String,
 token_metadata: CreateTokenMetadata
 */
 
-const MAX_TX_SIZE: usize = 1232;
-const MAX_TIP_TX_SIZE: usize = 1232 - 128;
-
 pub async fn build_bundle_txs(
     dev_with_amount: KeypairWithAmount,
     mint_keypair: &Keypair,
@@ -100,7 +97,7 @@ pub async fn build_bundle_txs(
 
     let mut added_tip_ix: bool = false;
 
-    for (index, keypair) in others_with_amount.iter().enumerate() {
+    for keypair in others_with_amount.iter() {
         let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
         if balance < keypair.amount {
             println!(
@@ -111,7 +108,6 @@ pub async fn build_bundle_txs(
         }
 
         let final_buy_amount = balance - to_subtract;
-
         //Return buy instructions
         let new_ixs = pumpfun_client
             .buy_ixs(
@@ -119,7 +115,7 @@ pub async fn build_bundle_txs(
                 &keypair.keypair,
                 final_buy_amount,
                 None,
-                transactions.len() <= MAX_TX_PER_BUNDLE,
+                transactions.len() < MAX_TX_PER_BUNDLE,
             )
             .await
             .unwrap();
@@ -210,8 +206,18 @@ pub async fn build_bundle_txs(
             current_tx_ixs = vec![];
             let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000_000);
             current_tx_ixs.push(priority_fee_ix);
+            let new_ixs = pumpfun_client
+                .buy_ixs(
+                    mint_pubkey,
+                    &keypair.keypair,
+                    final_buy_amount,
+                    None,
+                    transactions.len() < MAX_TX_PER_BUNDLE,
+                )
+                .await
+                .unwrap();
             current_tx_ixs.extend(new_ixs);
-            if !added_tip_ix && transactions.len() % 5 == 0 {
+            if !added_tip_ix && transactions.len() % 5 == 4 {
                 println!("Adding tip ix to current tx instructions");
                 let tip_ix = jito
                     .get_tip_ix(dev_with_amount.keypair.pubkey())
@@ -220,7 +226,7 @@ pub async fn build_bundle_txs(
                 current_tx_ixs.push(tip_ix);
                 added_tip_ix = true;
             }
-            if transactions.len() % 5 != 0 {
+            if transactions.len() % 5 == 0 {
                 added_tip_ix = false;
             }
         } else {
@@ -235,6 +241,23 @@ pub async fn build_bundle_txs(
     }
 
     if current_tx_ixs.len() > 0 {
+        let mut maybe_last_ixs_with_tip: Vec<Instruction> = Vec::new();
+
+        for ix in &current_tx_ixs {
+            maybe_last_ixs_with_tip.push(ix.clone());
+        }
+
+        //If the current transactions are below 5, meaning this tx will be the last one in the batch, add a tip instruction to it
+        if !added_tip_ix {
+            println!("Adding tip ix to current tx instructions");
+            let tip_ix = jito
+                .get_tip_ix(dev_with_amount.keypair.pubkey())
+                .await
+                .unwrap();
+
+            maybe_last_ixs_with_tip.push(tip_ix);
+        }
+
         let mut unique_signers: HashSet<Pubkey> = HashSet::new();
 
         for ix in &current_tx_ixs {
@@ -259,29 +282,16 @@ pub async fn build_bundle_txs(
             }
         }
 
-        let mut maybe_last_ixs_with_tip: Vec<Instruction> = Vec::new();
-
-        for ix in &current_tx_ixs {
-            maybe_last_ixs_with_tip.push(ix.clone());
-        }
-
-        //If the current transactions are below 5, meaning this tx will be the last one in the batch, add a tip instruction to it
-        if transactions.len() % 5 == 4 {
-            println!("Adding tip ix to current tx instructions");
-            let tip_ix = jito
-                .get_tip_ix(dev_with_amount.keypair.pubkey())
-                .await
-                .unwrap();
-
-            maybe_last_ixs_with_tip.push(tip_ix);
-        }
-
         //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between
 
         let mut maybe_last_tx_signers: Vec<&Keypair> = Vec::new();
 
         maybe_last_tx_signers.extend(tx_signers.clone());
-        maybe_last_tx_signers.push(&dev_with_amount.keypair);
+
+        //Means that maybe last tx has different signers than normal, and we add the dev keypair
+        if !added_tip_ix {
+            maybe_last_tx_signers.push(&dev_with_amount.keypair);
+        }
 
         let maybe_last_tx = build_transaction(
             &client,
@@ -310,22 +320,25 @@ pub async fn build_bundle_txs(
 
             let ixs: Vec<Instruction> = vec![tip_ix];
             let last_signer: Vec<&Keypair> = vec![&dev_with_amount.keypair];
-            let last_tx = build_transaction(
+            let tip_tx = build_transaction(
                 &client,
                 &ixs,
                 last_signer,
                 address_lookup_table_account.clone(),
                 Some(&mint_keypair),
             );
-
+            //If we have 4 transactions, meaning this tx will be the last one in the batch, add a tip instruction to it
             if transactions.len() % 5 == 4 {
-                transactions.push(before_last_tx);
-                transactions.push(last_tx);
+                //Case where no room for full TX so we only add tip tx to the pre final batch and have one last tx
+                transactions.push(tip_tx);
+                transactions.push(maybe_last_tx);
             } else {
-                transactions.push(last_tx);
+                //Case where we have room for split txs within same last batch 
                 transactions.push(before_last_tx);
+                transactions.push(tip_tx);
             }
         } else {
+            //Case where we added a tip instruction to the last transaction 
             println!("Last transaction is not too big, adding it to transactions");
             transactions.push(maybe_last_tx);
         }
