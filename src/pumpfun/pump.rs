@@ -167,7 +167,7 @@ impl PumpFun {
 
         let buy_amount_with_slippage = pumpfun::utils::calculate_with_slippage_buy(
             amount_sol,
-            slippage_basis_points.unwrap_or(500),
+            slippage_basis_points.unwrap_or(200),
         );
 
         println!("Amount sol: {:?}", amount_sol);
