@@ -29,6 +29,9 @@ requester_pubkey: String,
 token_metadata: CreateTokenMetadata
 */
 
+const MAX_TX_SIZE: usize = 1232;
+const MAX_TIP_TX_SIZE: usize = 1232 - 128;
+
 pub async fn build_bundle_txs(
     dev_with_amount: KeypairWithAmount,
     mint_keypair: &Keypair,
@@ -94,6 +97,8 @@ pub async fn build_bundle_txs(
     current_tx_ixs.extend(dev_ix);
     let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
     current_tx_ixs.push(priority_fee_ix);
+
+    let mut added_tip_ix: bool = false;
 
     for (index, keypair) in others_with_amount.iter().enumerate() {
         let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
@@ -206,13 +211,17 @@ pub async fn build_bundle_txs(
             let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000_000);
             current_tx_ixs.push(priority_fee_ix);
             current_tx_ixs.extend(new_ixs);
-            if index % 5 == 0 {
+            if !added_tip_ix && transactions.len() % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
                 let tip_ix = jito
                     .get_tip_ix(dev_with_amount.keypair.pubkey())
                     .await
                     .unwrap();
                 current_tx_ixs.push(tip_ix);
+                added_tip_ix = true;
+            }
+            if transactions.len() % 5 != 0 {
+                added_tip_ix = false;
             }
         } else {
             println!(
@@ -256,13 +265,16 @@ pub async fn build_bundle_txs(
             maybe_last_ixs_with_tip.push(ix.clone());
         }
 
-        //If the current transactions are below 5, add a tip instruction to the current tx instructions, which is the last transaction
-        println!("Adding tip ix to current tx instructions");
-        let tip_ix = jito
-            .get_tip_ix(dev_with_amount.keypair.pubkey())
-            .await
-            .unwrap();
-        maybe_last_ixs_with_tip.push(tip_ix);
+        //If the current transactions are below 5, meaning this tx will be the last one in the batch, add a tip instruction to it
+        if transactions.len() % 5 == 4 {
+            println!("Adding tip ix to current tx instructions");
+            let tip_ix = jito
+                .get_tip_ix(dev_with_amount.keypair.pubkey())
+                .await
+                .unwrap();
+
+            maybe_last_ixs_with_tip.push(tip_ix);
+        }
 
         //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between
 
@@ -291,8 +303,6 @@ pub async fn build_bundle_txs(
                 Some(&mint_keypair),
             );
 
-            transactions.push(before_last_tx);
-
             let tip_ix = jito
                 .get_tip_ix(dev_with_amount.keypair.pubkey())
                 .await
@@ -308,31 +318,18 @@ pub async fn build_bundle_txs(
                 Some(&mint_keypair),
             );
 
-            transactions.push(last_tx);
+            if transactions.len() % 5 == 4 {
+                transactions.push(before_last_tx);
+                transactions.push(last_tx);
+            } else {
+                transactions.push(last_tx);
+                transactions.push(before_last_tx);
+            }
         } else {
             println!("Last transaction is not too big, adding it to transactions");
             transactions.push(maybe_last_tx);
         }
     }
-
-    /*
-
-    TODO:
-
-    -Test the build_transaction functions with the wallets
-
-    -Play with the helper function and make it recursive
-            - Make it detect when we are in first bundle
-            - Make it add a tip instruction to every 5th transaction
-            - Make it split instructions into transactions correctly, and maximize instructions per transactino respecting size limit
-
-    ---> Goal is to make the helper function work correctly, and that it passes with_stimulate true only for the first 5 transactions
-
-    -Submit multiple bundles and await for the first bundle
-
-    ---> Goal is to ensure that the first bundle passes, second bundles
-
-     */
 
     let config = RpcSimulateTransactionConfig {
         sig_verify: true,
