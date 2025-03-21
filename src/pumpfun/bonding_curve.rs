@@ -1,36 +1,131 @@
-use pumpfun::error::ClientError;
-use crate::config::LAMPORTS_PER_SOL;
+//! Bonding curve account for the Pump.fun Solana Program
+//!
+//! This module contains the definition for the bonding curve account.
+//!
+//! # Bonding Curve Account
+//!
+//! The bonding curve account is used to manage token pricing and liquidity.
+//!
+//! # Fields
+//!
+//! - `discriminator`: Unique identifier for the bonding curve
+//! - `virtual_token_reserves`: Virtual token reserves used for price calculations
+//! - `virtual_sol_reserves`: Virtual SOL reserves used for price calculations
+//! - `real_token_reserves`: Actual token reserves available for trading
+//! - `real_sol_reserves`: Actual SOL reserves available for trading
+//! - `token_total_supply`: Total supply of tokens
+//! - `complete`: Whether the bonding curve is complete/finalized
+//!
+//! # Methods
+//!
+//! - `new`: Creates a new bonding curve instance
+//! - `get_buy_price`: Calculates the amount of tokens received for a given SOL amount
+//! - `get_sell_price`: Calculates the amount of SOL received for selling tokens
+//! - `get_market_cap_sol`: Calculates the current market cap in SOL
+//! - `get_final_market_cap_sol`: Calculates the final market cap in SOL after all tokens are sold
+//! - `get_buy_out_price`: Calculates the price to buy out all remaining tokens
 
-pub struct BondingCurve {
-    pub tokens_bought: u64,
-    pub reserve_sol: u64,
+use borsh::{BorshDeserialize, BorshSerialize};
+
+/// Represents a bonding curve for token pricing and liquidity management
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct BondingCurveAccount {
+    /// Unique identifier for the bonding curve
+    pub discriminator: u64,
+    /// Virtual token reserves used for price calculations
+    pub virtual_token_reserves: u64,
+    /// Virtual SOL reserves used for price calculations
+    pub virtual_sol_reserves: u64,
+    /// Total supply of tokens
+    pub token_total_supply: u64,
+    /// Whether the bonding curve is complete/finalized
+    pub complete: bool,
 }
 
-impl BondingCurve {
-    pub fn new() -> Self {
-        let sol_in_lamports = 30 * LAMPORTS_PER_SOL;
-        Self { tokens_bought: 0, reserve_sol: sol_in_lamports }
+impl BondingCurveAccount {
+    /// Creates a new bonding curve instance
+    ///
+    /// # Arguments
+    /// * `discriminator` - Unique identifier for the curve
+    /// * `virtual_token_reserves` - Virtual token reserves for price calculations
+    /// * `virtual_sol_reserves` - Virtual SOL reserves for price calculations
+    /// * `real_token_reserves` - Actual token reserves available
+    /// * `real_sol_reserves` - Actual SOL reserves available
+    /// * `token_total_supply` - Total supply of tokens
+    /// * `complete` - Whether the curve is complete
+
+    pub fn default() -> Self {
+        Self {
+            discriminator: 6,
+            virtual_token_reserves: 1_073_000_191,
+            virtual_sol_reserves: 30_000_000_000,
+            token_total_supply: 1_073_000_191,
+            complete: false,
+        }
     }
+
+
+    /*
+        let initSol = 30_000_000_000n
+        let initSupply = 1_073_000_191n
+
+     let untilNowBoughtSupply = 1_073_000_191n - 32_190_005_730n / (30_000_000_000n + untilNowBoughtSol.reduce((a, b) => a + b))
+     let s = initSupply - untilNowBoughtSupply - (virtualSol * virtualTokenReserves) / virtualSol + amount + 1n;
     
-    pub fn get_buy_price(&mut self, lamports_amount: u64) -> Result<u64, ClientError> {
-        if self.tokens_bought >= 793100000 {
+    let virtualSol = 30_000_000_000
+    // Calculate the product of virtual reserves
+    // Calculate the new virtual sol reserves after the purchase
+    // Calculate the new virtual token reserves after the purchase
+    // Calculate the amount of tokens to be purchased
+
+    return s;
+    */
+    /// Calculates the amount of tokens received for a given SOL amount
+    ///
+    /// # Arguments
+    /// * `amount` - Amount of SOL to spend
+    ///
+    /// # Returns
+    /// * `Ok(u64)` - Amount of tokens that would be received
+    /// * `Err(&str)` - Error message if curve is complete
+    /// 
+    /// TODO: Make sure to cover the fees before passing the sol buy amount 
+    pub fn get_buy_price(&mut self, sol_buy_amount: u64) -> Result<u64, &'static str> {
+        if self.complete {
+            return Err("Curve is complete");
+        }
+
+        if sol_buy_amount == 0 {
             return Ok(0);
         }
 
-        let sol_amount = lamports_amount as f64 / LAMPORTS_PER_SOL as f64;
+        // Calculate the product of virtual reserves using u128 to avoid overflow
+        let n: u128 = (self.virtual_sol_reserves as u128) * (self.virtual_token_reserves as u128);
+
+        // Calculate the new virtual sol reserves after the purchase
+        let i: u128 = (self.virtual_sol_reserves as u128) + (sol_buy_amount as u128);
+
+        // Calculate the new virtual token reserves after the purchase
+        let r: u128 = n / i + 1;
+
+        // Calculate the amount of tokens to be purchased
+        let s: u128 = (self.virtual_token_reserves as u128) - r;
+
+        // Convert back to u64 and return the minimum of calculated tokens and real reserves
+        let s_u64 = s as u64;
         
-        let eligible_amount = 1073000191 - self.tokens_bought - 32190005730 / ((self.reserve_sol as f64 /LAMPORTS_PER_SOL as f64 + sol_amount) as u64);
-        let until_now_bought = self.tokens_bought.clone();
-        self.tokens_bought += eligible_amount;
-        self.reserve_sol += lamports_amount;
+        let tokens_out = match s_u64 < self.virtual_token_reserves {
+            true => s_u64,
+            false => self.virtual_token_reserves
+        };
 
-        if eligible_amount + self.tokens_bought > 793100000 {
-            self.tokens_bought = 793100000;
-            self.reserve_sol = 85 * LAMPORTS_PER_SOL;
-            return Ok(793100000 - until_now_bought);
-        }
+        //TODO: Remove tokens bought from virtual reserves
+        self.virtual_token_reserves -= tokens_out;
+        //TODO: Add sol bought to virtual reserves
+        self.virtual_sol_reserves += sol_buy_amount;
 
-        Ok(eligible_amount) //Conver to decimals 6 for spl tokens
+        let tokens_out_decimals = tokens_out * 1_000_000_000;
+        Ok(tokens_out_decimals)
     }
 }
 
@@ -38,31 +133,30 @@ impl BondingCurve {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_multiple_buys() {
-        let mut curve = BondingCurve::new();
-        
-        // Test different buy amounts (in lamports)
-        let test_amounts = vec![
-            90000000,     // 2 SOL
-            1000000000,     // 5 SOL
-            1000000000,    // 10 SOL
-        ];
+    fn get_bonding_curve() -> BondingCurveAccount {
+        BondingCurveAccount::default()
+    }
 
-        for amount in test_amounts {
-            match curve.get_buy_price(amount) {
-                Ok(tokens_out) => {
-                    let num_digits = tokens_out.to_string().len();
-                    println!(
-                        "Buy {} SOL -> Get ({}) tokens with {} digits", 
-                        amount as f64 / LAMPORTS_PER_SOL as f64,
-                        tokens_out,
-                        num_digits
-                    );
-                },
-                Err(e) => println!("Error for {} SOL: {:?}", amount as f64 / LAMPORTS_PER_SOL as f64, e),
-            }
-        }
+    #[test]
+    fn test_bonding_curve_account() {
+        let mut bonding_curve: BondingCurveAccount = get_bonding_curve();
+
+        let first = bonding_curve.get_buy_price(1_000_000_000).unwrap();
+
+        let second = bonding_curve.get_buy_price(15_000_000_000).unwrap();
+
+        let total = first + second;
+
+        let mut second_bonding_curve: BondingCurveAccount = get_bonding_curve();
+        let buy_price = second_bonding_curve.get_buy_price(16_000_000_000).unwrap();
+
+        let mut third_bonding_curve: BondingCurveAccount = get_bonding_curve();
+
+        let last_buy = third_bonding_curve.get_buy_price(80_000_000_000).unwrap();
+
+
+        assert_eq!(total, buy_price);
+        assert_ne!(second, last_buy);
+        println!("Buy price: {}", last_buy);
     }
 }
-

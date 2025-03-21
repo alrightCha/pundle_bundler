@@ -27,7 +27,7 @@ use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};
 use crate::config::RPC_URL;
 use crate::params::PoolInformation;
-use crate::pumpfun::old_bc::BondingCurve;
+use crate::pumpfun::bonding_curve::BondingCurveAccount;
 /// Configuration for priority fee compute unit parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriorityFee {
@@ -44,7 +44,7 @@ pub struct PumpFun {
     /// Keypair used to sign transactions
     pub payer: Arc<Keypair>,
 
-    pub bonding_curve: BondingCurve,
+    pub bonding_curve: BondingCurveAccount,
 }
 
 impl PumpFun {
@@ -64,7 +64,7 @@ impl PumpFun {
         // Create Solana RPC Client with either WS or HTTP endpoint
         let rpc: RpcClient = RpcClient::new(RPC_URL.to_string());
 
-        let bonding_curve = BondingCurve::new();
+        let bonding_curve = BondingCurveAccount::default();
         // Return configured PumpFun client
         Self {
             rpc,
