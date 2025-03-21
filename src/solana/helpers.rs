@@ -218,32 +218,3 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
 
     transactions
 }
-
-/*
-
-- Send sol to addresses ONCE - DONE
-
-TOP UP INSTRUCTIONS
-let admin_to_dev_ix = transfer_ix(&admin_keypair.pubkey(), &dev_with_amount.keypair.pubkey(), dev_with_amount.amount);
-let admin_to_keypair_ixs: Vec<Instruction> = others_with_amount.iter().map(|other| transfer_ix(&admin_keypair.pubkey(), &other.keypair.pubkey(), other.amount)).collect();
-let jito_tip_ix = jito.get_tip_ix(admin_keypair.pubkey()).await.unwrap();
-
-let mut instructions: Vec<Instruction> = vec![admin_to_dev_ix];
-instructions.extend(admin_to_keypair_ixs);
-instructions.push(jito_tip_ix);
-
-let tx = build_transaction(&client, &instructions, vec![&admin_keypair], address_lookup_table_account.clone());
-
-//TODO: Add ATA instructions to the LUT
-let _ = jito.one_tx_bundle(tx).await.unwrap();
-
-    let mut all_ata: Vec<Pubkey> = Vec::new();
-    for keypair in other_buyers.iter() {
-        let ata = pumpfun_client.get_ata(&keypair.pubkey(), &mint_keypair.pubkey());
-        all_ata.push(ata);
-    }
-    let dev_ata = pumpfun_client.get_ata(&dev_with_amount.keypair.pubkey(), &mint_keypair.pubkey());
-    all_ata.push(dev_ata);
-    let _ = extend_lut(&client, &admin_keypair, lut_pubkey, &all_ata);
-
-*/
