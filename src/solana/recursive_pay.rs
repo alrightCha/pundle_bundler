@@ -49,6 +49,8 @@ pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, wi
     let mut ixs: Vec<Instruction> = Vec::new();
     let mut signers: Vec<Keypair> = Vec::new();
 
+    let mut total_wallets_balance = 0;  
+    let mut wallet_count = 0; 
     // Iterate over directory entries
     for entry in dir_entries {
         // Break if we've collected enough lamports (only when a specific amount is requested)
@@ -87,6 +89,8 @@ pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, wi
                 }
             };
 
+            total_wallets_balance += balance;
+            wallet_count += 1;
             println!("Balance: {}", balance);
 
             if balance < 2000000 {
@@ -130,6 +134,16 @@ pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, wi
             println!("Remaining lamports needed: {}", remaining);
             println!("Total available: {}", total_available);
             println!("Required instructions: {}", ixs.len());
+            return false;
+        }
+    }
+
+    //Gaurd to avoid spam which results in partial loss of funds due to fees
+    if !with_admin_transfer {
+        println!("Total wallets balance: {}", total_wallets_balance);
+        let min_balance_for_transfer = 2000000 * wallet_count as u64;
+        if total_wallets_balance < min_balance_for_transfer {
+            println!("Not enough balance to transfer");
             return false;
         }
     }
