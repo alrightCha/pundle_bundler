@@ -279,6 +279,7 @@ pub async fn build_bundle_txs(
         let tx_size: usize = bincode::serialized_size(&maybe_last_tx).unwrap() as usize;
 
         if tx_size > 1232 {
+            println!("Last transaction is too big, splitting it into two transactions with a tip instruction in between");
             let before_last_tx = build_transaction(
                 &client,
                 &current_tx_ixs,
@@ -306,6 +307,7 @@ pub async fn build_bundle_txs(
 
             transactions.push(last_tx);
         } else {
+            println!("Last transaction is not too big, adding it to transactions");
             transactions.push(maybe_last_tx);
         }
     }
