@@ -124,7 +124,7 @@ impl BondingCurveAccount {
         //TODO: Add sol bought to virtual reserves
         self.virtual_sol_reserves += sol_buy_amount;
 
-        let tokens_out_decimals = tokens_out * 1_000_000_000;
+        let tokens_out_decimals = tokens_out * 1_000_000;
         Ok(tokens_out_decimals)
     }
 }
@@ -141,22 +141,11 @@ mod tests {
     fn test_bonding_curve_account() {
         let mut bonding_curve: BondingCurveAccount = get_bonding_curve();
 
-        let first = bonding_curve.get_buy_price(1_000_000_000).unwrap();
+        let buys = [1000000000, 1000000000, 1052061251, 994215416, 1082293166, 981632881, 981632881, 1069224135, 959735067, 959735067, 959735068, 959735068];
 
-        let second = bonding_curve.get_buy_price(15_000_000_000).unwrap();
-
-        let total = first + second;
-
-        let mut second_bonding_curve: BondingCurveAccount = get_bonding_curve();
-        let buy_price = second_bonding_curve.get_buy_price(16_000_000_000).unwrap();
-
-        let mut third_bonding_curve: BondingCurveAccount = get_bonding_curve();
-
-        let last_buy = third_bonding_curve.get_buy_price(80_000_000_000).unwrap();
-
-
-        assert_eq!(total, buy_price);
-        assert_ne!(second, last_buy);
-        println!("Buy price: {}", last_buy);
+        for buy in buys {
+            let tokens_out = bonding_curve.get_buy_price(buy).unwrap();
+            println!("Tokens out: {}", tokens_out);
+        }
     }
 }

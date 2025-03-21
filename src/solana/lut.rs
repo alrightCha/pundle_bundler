@@ -137,9 +137,6 @@ pub fn extend_lut(
         blockhash,
     );
 
-    let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-    println!("Size of transaction: {}", size);
-
     // Send and wait for finalized confirmation
     let signature = client.send_and_confirm_transaction_with_spinner_and_config(
         &tx,

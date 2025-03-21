@@ -113,7 +113,7 @@ pub async fn build_bundle_txs(
                 mint_pubkey,
                 &keypair.keypair,
                 final_buy_amount,
-                Some(2000),
+                None,
                 transactions.len() <= MAX_TX_PER_BUNDLE,
             )
             .await
