@@ -11,6 +11,7 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
+use solana::lut::{extend_lut, extend_lut_size};
 use solana::refund::refund_keypairs;
 use solana::utils::load_keypair;
 use solana_sdk::signer::Signer;
@@ -26,7 +27,8 @@ use std::net::SocketAddr;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 use solana_sdk::pubkey::Pubkey;
-
+use solana_client::rpc_client::RpcClient;
+use crate::config::RPC_URL;
 use handlers::{
     health_check, 
     HandlerManager
@@ -46,7 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //Load admin keypair 
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
     let admin_keypair = load_keypair(&admin_keypair_path).unwrap();
-    
+    let another_admin_keypair = admin_keypair.insecure_clone();
+    let client = RpcClient::new(RPC_URL.to_string());
+
     println!("Admin keypair loaded: {}", admin_keypair.pubkey());
 
     refund_keypairs("EzYBEUw6FL9h6hpT1fM91TuX9DsTwA7ASn1Gs9viBsbr".to_string(), admin_keypair.pubkey().to_string(), "".to_string()).await;
@@ -55,6 +59,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //Storing LUT to access it across handlers 
     let pubkey_to_lut:  Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
 
+    let key_1 = Pubkey::from_str("CytkYUNagWrfkebwpn3JijDADjetFGBUvvxiFEbgjCe").unwrap();
+    let key_2 = Pubkey::from_str("7PFsqyG9Z6rXp4gxPHPP2xSNkCGDUmT6ouPhU1XGa8XC").unwrap();
+    let key_3 = Pubkey::from_str("DPzJQHTUApDLmjjksYuf4hVTWvuvEhs7RYBWwa6n9FcJ").unwrap();
+    let key_4 = Pubkey::from_str("6yjN7B9ewzG6wJrUNwPRg77CabBvEzUz8SsVDNaVjYkb").unwrap();
+    let key_5 = Pubkey::from_str("VzLhCbScHJ9Qhvfy91hXMQAsdp8euRJQrg37VK4u62X").unwrap();
+    let key_6 = Pubkey::from_str("E2aZ8rPaEaTStWbVsmWPRHtqPUfFRTqjftw775jDoZQF").unwrap();
+
+    let lut_pubkey = Pubkey::from_str("DwB2ERydDWT8mEFzDpBkJKNjzdjJ7ZVGVPLYLwJu9iKu").unwrap();
+
+    let addresses = vec![key_1, key_2];
+    let _ = extend_lut_size(&client, &another_admin_keypair, lut_pubkey, &addresses);
+
+    let other_addresses = vec![key_1, key_2, key_3, key_4];
+    let _ = extend_lut_size(&client, &another_admin_keypair, lut_pubkey, &other_addresses);
     //setup app
     let app = Router::new()
         .route("/", get(health_check))

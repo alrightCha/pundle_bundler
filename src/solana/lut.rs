@@ -77,6 +77,38 @@ pub fn create_lut(client: &RpcClient, payer: &Keypair) -> Result<(Pubkey, Signat
     Ok((pda, signature))
 }
 
+
+//add addresses to pre-existing lut
+pub fn extend_lut_size(
+    client: &RpcClient,
+    authority: &Keypair,
+    lut_pubkey: Pubkey,
+    addresses: &Vec<Pubkey>,
+) {
+    let (_, blockhash) = get_slot_and_blockhash(&client).unwrap();
+
+    // Add priority fee instruction
+    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(50_000);
+
+    let ix = extend_lookup_table(
+        lut_pubkey,
+        authority.pubkey(),
+        Some(authority.pubkey()),
+        addresses.to_vec(),
+    );
+
+    let tx = Transaction::new_signed_with_payer(
+        &[priority_fee_ix, ix],
+        Some(&authority.pubkey()),
+        &[&authority],
+        blockhash,
+    );
+
+    let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+    println!("Size of transaction: {}", size);
+}
+
+
 //add addresses to pre-existing lut
 pub fn extend_lut(
     client: &RpcClient,
@@ -102,6 +134,9 @@ pub fn extend_lut(
         &[&authority],
         blockhash,
     );
+
+    let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+    println!("Size of transaction: {}", size);
 
     // Send and wait for finalized confirmation
     let signature = client.send_and_confirm_transaction_with_spinner_and_config(
