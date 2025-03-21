@@ -84,7 +84,7 @@ pub fn extend_lut_size(
     authority: &Keypair,
     lut_pubkey: Pubkey,
     addresses: &Vec<Pubkey>,
-) {
+) -> Result<usize, ClientError> {
     let (_, blockhash) = get_slot_and_blockhash(&client).unwrap();
 
     // Add priority fee instruction
@@ -106,6 +106,8 @@ pub fn extend_lut_size(
 
     let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
     println!("Size of transaction: {}", size);
+
+    Ok(size)
 }
 
 

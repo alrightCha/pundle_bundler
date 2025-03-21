@@ -12,13 +12,16 @@ use std::{env, sync::Arc};
 use tokio::time::Duration;
 
 use super::help::build_bundle_txs;
-use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::{
     lut::{create_lut, extend_lut, verify_lut_ready},
     utils::{build_transaction, load_keypair, transfer_ix},
+};
+use crate::{
+    config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
+    solana::lut::extend_lut_size,
 };
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
@@ -103,21 +106,35 @@ pub async fn process_bundle(
         println!("ATA pubkey: {:?}", ata_pubkey);
         pubkeys_for_lut.push(ata_pubkey);
     }
+
     let dev_ata_pubkey =
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
 
-    //Extend lut with addresses & attached token accounts
-    let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
-
-    println!("LUT extended with addresses: {:?}", extended_lut);
+    let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
+    if extend_tx_size > 1232 {
+        //Split lut into two vectors
+        let split_point = pubkeys_for_lut.len() / 2;
+        let first_half = pubkeys_for_lut[..split_point].to_vec();
+        let second_half = pubkeys_for_lut[split_point..].to_vec();
+        //Extend lut with addresses & attached token accounts
+        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &first_half).unwrap();
+        println!("LUT extended once: {:?}", extended_lut);
+        //Extend lut with addresses & attached token accounts
+        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &second_half).unwrap();
+        println!("LUT extended twice: {:?}", extended_lut);
+    } else {
+        //Extend lut with addresses & attached token accounts
+        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
+        println!("LUT extended with addresses: {:?}", extended_lut);
+    }
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     println!(
         "Amount of lamports to transfer to dev: {}",
         dev_keypair_with_amount.amount
     );
-    
+
     let admin_to_dev_ix = transfer_ix(
         &admin_kp.pubkey(),
         &dev_keypair_with_amount.keypair.pubkey(),
@@ -173,7 +190,7 @@ pub async fn process_bundle(
         // Split instructions into two vectors
         let instructions_len = instructions.len();
         let split_point = instructions_len / 2;
-        
+
         let mut first_instructions: Vec<Instruction> = instructions[..split_point].to_vec();
         let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
         first_instructions.push(jito_tip_ix);
@@ -189,11 +206,11 @@ pub async fn process_bundle(
         );
         let _ = jito.one_tx_bundle(first_tx).await.unwrap();
 
-        // Build and send second transaction 
+        // Build and send second transaction
         let second_tx = build_transaction(
             &client,
             &second_instructions,
-            vec![&admin_kp], 
+            vec![&admin_kp],
             address_lookup_table_account.clone(),
             None,
         );
@@ -207,10 +224,14 @@ pub async fn process_bundle(
     println!("Transaction built");
     //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
 
-    let mut dev_balance =  client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+    let mut dev_balance = client
+        .get_balance(&dev_keypair_with_amount.keypair.pubkey())
+        .unwrap();
     while dev_balance < dev_keypair_with_amount.amount {
         tokio::time::sleep(Duration::from_secs(3)).await;
-        dev_balance = client.get_balance(&dev_keypair_with_amount.keypair.pubkey()).unwrap();
+        dev_balance = client
+            .get_balance(&dev_keypair_with_amount.keypair.pubkey())
+            .unwrap();
     }
 
     //Step 4: Create and extend lut for the bundle
