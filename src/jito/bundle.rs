@@ -168,10 +168,21 @@ pub async fn process_bundle(
     let mint_pubkey = mint.pubkey();
 
     let transactions = build_bundle_txs(dev_keypair_with_amount, mint, keypairs_with_amount, lut_pubkey, mint_pubkey, token_metadata).await;
-    // Send the bundle....
-    println!("Attempting to submit bundle...");
+    
+    // Split transactions into batches of 5
+    let chunks: Vec<_> = transactions.chunks(5).collect();
+    let total_chunks = chunks.len();
+    let last_chunk_size = chunks.last().map_or(0, |chunk| chunk.len());
+    
+    println!("Total number of chunks: {}", total_chunks);
+    println!("Number of transactions in last chunk: {}", last_chunk_size);
 
-    let _ = jito.submit_bundle(transactions, mint.pubkey(), Some(&pumpfun_client)).await.unwrap();
+    // Only send first chunk for testing
+    if let Some(first_chunk) = chunks.first() {
+        println!("Attempting to submit first bundle of {} transactions...", first_chunk.len());
+        let chunk_vec = first_chunk.to_vec();
+        let _ = jito.submit_bundle(chunk_vec, mint.pubkey(), Some(&pumpfun_client)).await.unwrap();
+    }
 
     println!("Making callback to orchestrator...");
     // Fire and forget the callback

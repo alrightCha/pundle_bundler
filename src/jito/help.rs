@@ -302,7 +302,7 @@ pub async fn build_bundle_txs(
                 &ixs,
                 last_signer,
                 address_lookup_table_account.clone(),
-                Some(&dev_with_amount.keypair),
+                Some(&mint_keypair),
             );
 
             transactions.push(last_tx);
