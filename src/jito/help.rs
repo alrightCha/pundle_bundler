@@ -1,25 +1,24 @@
 use super::jito::JitoBundle;
-use crate::{config::SOLANA_TIP, pumpfun::pump::PumpFun};
+use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
+use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
+use crate::params::KeypairWithAmount;
+use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::build_transaction;
+use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
+use solana_client::rpc_config::RpcSimulateTransactionConfig;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
     address_lookup_table::AddressLookupTableAccount,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::VersionedTransaction,
     sysvar::rent::Rent,
+    transaction::VersionedTransaction,
 };
 use std::collections::HashSet;
-use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL};
 use std::sync::Arc;
-use crate::params::{CreateTokenMetadata, KeypairWithAmount};
-use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use solana_client::rpc_config::RpcSimulateTransactionConfig;
-use solana_sdk::commitment_config::CommitmentConfig;
-use pumpfun_cpi::instruction::Create;
 
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -29,7 +28,14 @@ requester_pubkey: String,
 token_metadata: CreateTokenMetadata
 */
 
-pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: &Keypair, others_with_amount: Vec<KeypairWithAmount>, lut_pubkey: Pubkey, mint_pubkey: Pubkey, token_metadata: Create) -> Vec<VersionedTransaction> {
+pub async fn build_bundle_txs(
+    dev_with_amount: KeypairWithAmount,
+    mint_keypair: &Keypair,
+    others_with_amount: Vec<KeypairWithAmount>,
+    lut_pubkey: Pubkey,
+    mint_pubkey: Pubkey,
+    token_metadata: Create,
+) -> Vec<VersionedTransaction> {
     println!("Building bundle txs...");
     let client = RpcClient::new(RPC_URL);
 
@@ -64,13 +70,7 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
     let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
-    let mint_ix = pumpfun_client
-        .create_instruction(&mint_keypair, token_metadata);
-
-    let tip_ix = jito
-    .get_tip_ix(dev_with_amount.keypair.pubkey())
-    .await
-    .unwrap();
+    let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata);
 
     let dev_ix = pumpfun_client
         .buy_ixs(
@@ -88,10 +88,9 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-    let mut current_tx_ixs : Vec<Instruction> = Vec::new(); 
+    let mut current_tx_ixs: Vec<Instruction> = Vec::new();
     current_tx_ixs.push(mint_ix);
     current_tx_ixs.extend(dev_ix);
-    current_tx_ixs.push(tip_ix);
 
     for (index, keypair) in others_with_amount.iter().enumerate() {
         let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
@@ -107,10 +106,16 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
         //Return buy instructions
         let new_ixs = pumpfun_client
-        .buy_ixs(mint_pubkey, &keypair.keypair, final_buy_amount, None, transactions.len() < MAX_TX_PER_BUNDLE)
-        .await
-        .unwrap();
-        //let mut maybe_ixs: Vec<Instruction> = Vec::new(); 
+            .buy_ixs(
+                mint_pubkey,
+                &keypair.keypair,
+                final_buy_amount,
+                None,
+                transactions.len() < MAX_TX_PER_BUNDLE,
+            )
+            .await
+            .unwrap();
+        //let mut maybe_ixs: Vec<Instruction> = Vec::new();
 
         //for ix in &current_tx_ixs {
         //    maybe_ixs.push(ix.clone());
@@ -132,7 +137,10 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
         let mut tx_signers: Vec<&Keypair> = Vec::new();
 
         for signer in unique_signers {
-            if let Some(kp) = others_with_amount.iter().find(|kp| kp.keypair.pubkey() == signer) {
+            if let Some(kp) = others_with_amount
+                .iter()
+                .find(|kp| kp.keypair.pubkey() == signer)
+            {
                 tx_signers.push(&kp.keypair);
             }
             if signer == dev_with_amount.keypair.pubkey() {
@@ -156,7 +164,10 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
         let mut maybe_ix_tx_signers: Vec<&Keypair> = Vec::new();
         for signer in maybe_ix_unique_signers {
-            if let Some(kp) = others_with_amount.iter().find(|kp| kp.keypair.pubkey() == signer) {
+            if let Some(kp) = others_with_amount
+                .iter()
+                .find(|kp| kp.keypair.pubkey() == signer)
+            {
                 maybe_ix_tx_signers.push(&kp.keypair);
             }
             if signer == dev_with_amount.keypair.pubkey() {
@@ -167,24 +178,42 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             }
         }
 
-        let maybe_tx = build_transaction(&client, &all_ixs, maybe_ix_tx_signers, address_lookup_table_account.clone(), Some(&mint_keypair));
+        let maybe_tx = build_transaction(
+            &client,
+            &all_ixs,
+            maybe_ix_tx_signers,
+            address_lookup_table_account.clone(),
+            Some(&mint_keypair),
+        );
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
 
         //Add new ixs to current tx instructions if size below 1232, else create new tx and reset current tx instructions, and add new ixs to it
         if size > 1232 {
-            let new_tx = build_transaction(&client, &current_tx_ixs, tx_signers, address_lookup_table_account.clone(), Some(&mint_keypair));
+            let new_tx = build_transaction(
+                &client,
+                &current_tx_ixs,
+                tx_signers,
+                address_lookup_table_account.clone(),
+                Some(&mint_keypair),
+            );
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
             current_tx_ixs = vec![];
             current_tx_ixs.extend(new_ixs);
             if index % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
-                let tip_ix = jito.get_tip_ix(dev_with_amount.keypair.pubkey()).await.unwrap();
+                let tip_ix = jito
+                    .get_tip_ix(dev_with_amount.keypair.pubkey())
+                    .await
+                    .unwrap();
                 current_tx_ixs.push(tip_ix);
             }
-        }else{
-            println!("Adding new ixs to current tx instructions, current size: {}", size);
+        } else {
+            println!(
+                "Adding new ixs to current tx instructions, current size: {}",
+                size
+            );
             current_tx_ixs.extend(new_ixs);
         }
         println!("With {} instructions", current_tx_ixs.len());
@@ -193,6 +222,16 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
     if current_tx_ixs.len() > 0 {
         let mut unique_signers: HashSet<Pubkey> = HashSet::new();
+        //If the current transactions are below 5, add a tip instruction to the current tx instructions, which is the last transaction
+        if transactions.len() < 5 {
+            println!("Adding tip ix to current tx instructions");
+            let tip_ix = jito
+                .get_tip_ix(dev_with_amount.keypair.pubkey())
+                .await
+                .unwrap();
+            current_tx_ixs.push(tip_ix);
+        }
+
         for ix in &current_tx_ixs {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
                 unique_signers.insert(acc.pubkey);
@@ -201,7 +240,10 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
         let mut tx_signers: Vec<&Keypair> = Vec::new();
         for signer in unique_signers {
-            if let Some(kp) = others_with_amount.iter().find(|kp| kp.keypair.pubkey() == signer) {
+            if let Some(kp) = others_with_amount
+                .iter()
+                .find(|kp| kp.keypair.pubkey() == signer)
+            {
                 tx_signers.push(&kp.keypair);
             }
             if signer == dev_with_amount.keypair.pubkey() {
@@ -212,7 +254,13 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
             }
         }
 
-        transactions.push(build_transaction(&client, &current_tx_ixs, tx_signers, address_lookup_table_account.clone(), Some(&mint_keypair)));
+        transactions.push(build_transaction(
+            &client,
+            &current_tx_ixs,
+            tx_signers,
+            address_lookup_table_account.clone(),
+            Some(&mint_keypair),
+        ));
     }
 
     /*
@@ -234,7 +282,7 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
      */
 
-     let config = RpcSimulateTransactionConfig {
+    let config = RpcSimulateTransactionConfig {
         sig_verify: true,
         replace_recent_blockhash: false, // Disable blockhash replacement
         commitment: Some(CommitmentConfig::finalized()),
@@ -245,8 +293,8 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
                 if let Some(err) = sim_result.value.err {
-                eprintln!("❌ Transaction failed simulation: {:?}", err);
-            } else {
+                    eprintln!("❌ Transaction failed simulation: {:?}", err);
+                } else {
                     println!("✅ Transaction simulation successful");
                 }
             }
@@ -258,5 +306,3 @@ pub async fn build_bundle_txs(dev_with_amount: KeypairWithAmount, mint_keypair: 
 
     transactions
 }
-
-
