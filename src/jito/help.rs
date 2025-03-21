@@ -262,10 +262,16 @@ pub async fn build_bundle_txs(
         }
 
         //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between 
+
+        let mut maybe_last_tx_signers: Vec<&Keypair> = Vec::new();
+
+        maybe_last_tx_signers.extend(tx_signers.clone());
+        maybe_last_tx_signers.push(&dev_with_amount.keypair);
+
         let maybe_last_tx = build_transaction(
             &client,
             &maybe_last_ixs_with_tip,
-            tx_signers.clone(),
+            maybe_last_tx_signers,
             address_lookup_table_account.clone(),
             Some(&mint_keypair),
         );
@@ -289,25 +295,18 @@ pub async fn build_bundle_txs(
                 .unwrap();
 
             let ixs: Vec<Instruction> = vec![tip_ix];
-
+            let last_signer: Vec<&Keypair> = vec![&dev_with_amount.keypair];
             let last_tx = build_transaction(
                 &client,
                 &ixs,
-                tx_signers,
+                last_signer,
                 address_lookup_table_account.clone(),
                 Some(&dev_with_amount.keypair),
             );
 
             transactions.push(last_tx);
-        }else{
-            let last_tx = build_transaction(
-                &client,
-                &current_tx_ixs,
-                tx_signers,
-                address_lookup_table_account.clone(),
-                Some(&mint_keypair),
-            );
-            transactions.push(last_tx);
+        } else {
+            transactions.push(maybe_last_tx);
         }
     }
 
