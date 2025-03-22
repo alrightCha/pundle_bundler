@@ -1,7 +1,4 @@
-use crate::{
-    config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER},
-    params::CreateTokenMetadata,
-};
+use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
 use anchor_client::anchor_lang::InstructionData;
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
@@ -13,22 +10,21 @@ use anchor_client::{
         system_instruction::transfer,
     },
 };
-use pumpfun_cpi::instruction::Create;
-use pumpfun_cpi::instruction::Buy;
+use pumpfun_cpi::instruction::{Create, Buy, Sell};
+
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use pumpfun::instruction;
-use pumpfun::PumpFun as PumpFun2;
+use borsh::BorshDeserialize;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};
 use crate::config::RPC_URL;
 use crate::params::PoolInformation;
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
+
 /// Configuration for priority fee compute unit parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriorityFee {
@@ -113,7 +109,7 @@ impl PumpFun {
             &args.data(),
             vec![
                 AccountMeta::new(mint.pubkey(), true),
-                AccountMeta::new(PumpFun2::get_mint_authority_pda(), false),
+                AccountMeta::new(Self::get_mint_authority_pda(), false),
                 AccountMeta::new(bonding_curve, false),
                 AccountMeta::new(
                     get_associated_token_address(&bonding_curve, &mint.pubkey()),
@@ -121,7 +117,7 @@ impl PumpFun {
                 ),
                 AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::MPL_TOKEN_METADATA, false),
-                AccountMeta::new(PumpFun2::get_metadata_pda(&mint.pubkey()), false),
+                AccountMeta::new(Self::get_metadata_pda(&mint.pubkey()), false),
                 AccountMeta::new(self.payer.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
@@ -190,7 +186,7 @@ impl PumpFun {
             instructions.push(create_ata_ix);
         }
 
-        let bonding_curve: Pubkey = PumpFun::get_bonding_curve_pda(mint).unwrap();
+        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
         let args = Buy {
             _amount: buy_amount,
             _max_sol_cost: amount_sol,
@@ -271,16 +267,32 @@ impl PumpFun {
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
         instructions.push(priority_fee_ix);
 
-        // Add sell instruction
-        let sell_ix = instruction::sell(
-            &keypair,
-            mint,
-            &global_account.fee_recipient,
-            pumpfun::cpi::instruction::Sell {
-                _amount: amount,
-                _min_sol_output: min_sol_output,
-            },
+        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
+
+        let args = Sell {
+            _amount: amount,
+            _min_sol_output: min_sol_output,
+        };
+
+        let sell_ix = Instruction::new_with_bytes(
+            pumpfun::constants::accounts::PUMPFUN,
+            &args.data(),
+            vec![
+                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new(global_account.fee_recipient, false),
+                AccountMeta::new_readonly(*mint, false),
+                AccountMeta::new(bonding_curve, false),
+                AccountMeta::new(get_associated_token_address(&bonding_curve, mint), false),
+                AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
+                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
+            ],
         );
+
 
         let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
 
@@ -321,14 +333,31 @@ impl PumpFun {
 
         let mut instructions: Vec<Instruction> = Vec::new();
 
-        let sell_ix = instruction::sell(
-            &keypair,
-            mint,
-            &global_account.fee_recipient,
-            pumpfun::cpi::instruction::Sell {
-                _amount: balance_u64,
-                _min_sol_output: min_sol_output,
-            },
+        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
+
+
+        let args = Sell {
+            _amount: balance_u64,
+            _min_sol_output: min_sol_output,
+        };
+
+        let sell_ix = Instruction::new_with_bytes(
+            pumpfun::constants::accounts::PUMPFUN,
+            &args.data(),
+            vec![
+                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new(global_account.fee_recipient, false),
+                AccountMeta::new_readonly(*mint, false),
+                AccountMeta::new(bonding_curve, false),
+                AccountMeta::new(get_associated_token_address(&bonding_curve, mint), false),
+                AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
+                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
+            ],
         );
 
         let tax_amount = min_sol / 100; // Calculate 1% of min_sol_output
@@ -341,6 +370,27 @@ impl PumpFun {
         instructions.push(sell_ix);
         instructions.push(tax_ix);
         Ok(instructions)
+    }
+
+      /// Gets the Program Derived Address (PDA) for the mint authority
+    ///
+    /// # Returns
+    ///
+    /// Returns the PDA public key derived from the MINT_AUTHORITY_SEED
+    fn get_mint_authority_pda() -> Pubkey {
+        let seeds: &[&[u8]; 1] = &[pumpfun::constants::seeds::MINT_AUTHORITY_SEED];
+        let program_id: &Pubkey = &pumpfun::cpi::ID;
+        Pubkey::find_program_address(seeds, program_id).0
+    }
+
+    fn get_metadata_pda(mint: &Pubkey) -> Pubkey {
+        let seeds: &[&[u8]; 3] = &[
+            pumpfun::constants::seeds::METADATA_SEED,
+            pumpfun::constants::accounts::MPL_TOKEN_METADATA.as_ref(),
+            mint.as_ref(),
+        ];
+        let program_id: &Pubkey = &pumpfun::constants::accounts::MPL_TOKEN_METADATA;
+        Pubkey::find_program_address(seeds, program_id).0
     }
 
     /// Gets the global state account data containing program-wide configuration
