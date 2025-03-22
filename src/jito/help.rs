@@ -66,9 +66,9 @@ pub async fn build_bundle_txs(
     let rent = Rent::default();
     let rent_exempt_min = rent.minimum_balance(0);
 
-    let to_subtract: u64 = rent_exempt_min + FEE_AMOUNT + BUFFER_AMOUNT;
+    let to_subtract: u64 = rent_exempt_min + FEE_AMOUNT;
 
-    let to_sub_for_dev: u64 = to_subtract.clone() + JITO_TIP_AMOUNT;
+    let to_sub_for_dev: u64 = to_subtract.clone() + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
 
     let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
