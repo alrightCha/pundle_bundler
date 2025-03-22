@@ -3,11 +3,9 @@ use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::build_transaction;
+use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
-use solana_client::rpc_config::RpcSimulateTransactionConfig;
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
@@ -66,9 +64,7 @@ pub async fn build_bundle_txs(
     let rent = Rent::default();
     let rent_exempt_min = rent.minimum_balance(0);
 
-    let to_subtract: u64 = rent_exempt_min + FEE_AMOUNT;
-
-    let to_sub_for_dev: u64 = to_subtract.clone() + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
+    let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
 
     let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
@@ -108,13 +104,12 @@ pub async fn build_bundle_txs(
             continue;
         }
 
-        let final_buy_amount = balance - to_subtract;
         //Return buy instructions
         let new_ixs = pumpfun_client
             .buy_ixs(
                 mint_pubkey,
                 &keypair.keypair,
-                final_buy_amount,
+                balance,
                 None,
                 transactions.len() < MAX_TX_PER_BUNDLE,
             )
@@ -200,7 +195,7 @@ pub async fn build_bundle_txs(
                 &current_tx_ixs,
                 tx_signers,
                 address_lookup_table_account.clone(),
-                &admin_keypair,   
+                &admin_keypair,
             );
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
@@ -211,7 +206,7 @@ pub async fn build_bundle_txs(
                 .buy_ixs(
                     mint_pubkey,
                     &keypair.keypair,
-                    final_buy_amount,
+                    balance,
                     None,
                     transactions.len() < MAX_TX_PER_BUNDLE,
                 )
@@ -345,27 +340,6 @@ pub async fn build_bundle_txs(
         }
     }
 
-    let config = RpcSimulateTransactionConfig {
-        sig_verify: true,
-        replace_recent_blockhash: false, // Disable blockhash replacement
-        commitment: Some(CommitmentConfig::finalized()),
-        ..Default::default()
-    };
-
-    for tx in transactions.iter() {
-        match client.simulate_transaction_with_config(tx, config.clone()) {
-            Ok(sim_result) => {
-                if let Some(err) = sim_result.value.err {
-                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
-                } else {
-                    println!("✅ Transaction simulation successful");
-                }
-            }
-            Err(e) => {
-                eprintln!("🚨 Transaction simulation error: {:?}", e);
-            }
-        }
-    }
-
+    test_transactions(&client, &transactions).await;
     transactions
 }

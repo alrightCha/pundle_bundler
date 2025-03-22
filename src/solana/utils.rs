@@ -1,25 +1,27 @@
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
-    hash::Hash, 
+    hash::Hash,
     instruction::Instruction,
     message::{v0::Message, VersionedMessage},
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
+    system_instruction,
     transaction::VersionedTransaction,
-    system_instruction
+    commitment_config::CommitmentConfig
 };
+use solana_client::rpc_config::RpcSimulateTransactionConfig;
 
-use solana_client::rpc_client::RpcClient;
-use std::result::Result::Ok;
+use anchor_spl::associated_token::get_associated_token_address;
 use anyhow::Result;
 use bs58;
 use serde_json;
+use solana_client::rpc_client::RpcClient;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
 use std::io::{BufWriter, Write};
-use anchor_spl::associated_token::get_associated_token_address;
+use std::path::Path;
+use std::result::Result::Ok;
 
 //Create a keypair under the keys/requester/keypair_pubkey.json directory
 pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error::Error>> {
@@ -27,16 +29,16 @@ pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error:
 
     // Create keys directory if it doesn't exist
     std::fs::create_dir_all("accounts")?;
-    
+
     // Create requester directory inside keys
     let requester_dir = format!("accounts/{}", requester.to_string());
     std::fs::create_dir_all(&requester_dir)?;
 
     // Create file path with keypair public key as filename
     let file_path = format!("{}/{}.json", requester_dir, keypair.pubkey());
-    
-    println!("Saving keypair to path: {}", file_path);  // Debug print
-    
+
+    println!("Saving keypair to path: {}", file_path); // Debug print
+
     // Write keypair bytes to file
     let file = File::create(Path::new(&file_path))?;
     let mut writer = BufWriter::new(file);
@@ -57,11 +59,11 @@ pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error:
         .append(true)
         .open("keypairs.txt")?;
     let mut writer = BufWriter::new(keypairs_file);
-    
+
     // Format: pubkey:private_key_bytes
     writeln!(
-        writer, 
-        "{}:{}", 
+        writer,
+        "{}:{}",
         keypair.pubkey(),
         bs58::encode(&keypair.to_bytes()).into_string()
     )?;
@@ -79,11 +81,7 @@ pub fn load_keypair(path: &str) -> Result<Keypair> {
 }
 
 pub fn transfer_ix(from: &Pubkey, to: &Pubkey, amount: u64) -> Instruction {
-    let main_transfer_ix: Instruction = system_instruction::transfer(
-        &from,
-        &to,
-        amount,
-    );
+    let main_transfer_ix: Instruction = system_instruction::transfer(&from, &to, amount);
 
     main_transfer_ix
 }
@@ -93,7 +91,7 @@ pub fn build_transaction(
     ixes: &[Instruction],
     keypairs: Vec<&Keypair>, // Accept a vector of keypair
     lut: AddressLookupTableAccount,
-    payer: &Keypair
+    payer: &Keypair,
 ) -> VersionedTransaction {
     // Ensure there is at least one keypair to use as the payer
     if keypairs.is_empty() {
@@ -101,15 +99,10 @@ pub fn build_transaction(
     }
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
-    let message = Message::try_compile(
-        &payer.pubkey(),
-        ixes,
-        &[lut],
-        blockhash,
-    ).unwrap();
-    
+    let message = Message::try_compile(&payer.pubkey(), ixes, &[lut], blockhash).unwrap();
+
     // Compile the message with the payer's public key
-    
+
     let versioned_message = VersionedMessage::V0(message);
 
     // Create a vector of references to the keypairs for signing
@@ -117,25 +110,35 @@ pub fn build_transaction(
     if !signers.iter().any(|kp| kp.pubkey() == payer.pubkey()) {
         signers.push(payer);
     }
-    println!("Signers: {:?}", signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
+    println!(
+        "Signers: {:?}",
+        signers
+            .iter()
+            .map(|kp| kp.pubkey())
+            .collect::<Vec<Pubkey>>()
+    );
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
 
     tx
 }
 
-pub fn get_slot_and_blockhash(client: &RpcClient) -> Result<(u64, Hash), Box<dyn std::error::Error>> {
+pub fn get_slot_and_blockhash(
+    client: &RpcClient,
+) -> Result<(u64, Hash), Box<dyn std::error::Error>> {
     let blockhash = client.get_latest_blockhash()?;
     let slot = client.get_slot()?;
     Ok((slot, blockhash))
 }
 
-pub fn get_keypairs_for_pubkey(pubkey: &String) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
+pub fn get_keypairs_for_pubkey(
+    pubkey: &String,
+) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
     let mut keypairs = Vec::new();
     let dir_path = format!("accounts/{}", pubkey);
     let dir_entries = std::fs::read_dir(dir_path)?;
-       // Iterate over directory entries
-       for entry in dir_entries {
+    // Iterate over directory entries
+    for entry in dir_entries {
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
@@ -146,7 +149,7 @@ pub fn get_keypairs_for_pubkey(pubkey: &String) -> Result<Vec<Keypair>, Box<dyn 
 
         if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
             let file_path = entry.path();
-    
+
             let keypair = load_keypair(file_path.to_str().unwrap()).unwrap();
             keypairs.push(keypair);
         }
@@ -159,4 +162,28 @@ pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubke
     let balance = client.get_token_account_balance(&ata).unwrap();
     let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
     balance_u64
+}
+
+pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedTransaction>) {
+    let config = RpcSimulateTransactionConfig {
+        sig_verify: true,
+        replace_recent_blockhash: false, // Disable blockhash replacement
+        commitment: Some(CommitmentConfig::finalized()),
+        ..Default::default()
+    };
+
+    for tx in transactions.iter() {
+        match client.simulate_transaction_with_config(tx, config.clone()) {
+            Ok(sim_result) => {
+                if let Some(err) = sim_result.value.err {
+                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
+                } else {
+                    println!("✅ Transaction simulation successful");
+                }
+            }
+            Err(e) => {
+                eprintln!("🚨 Transaction simulation error: {:?}", e);
+            }
+        }
+    }
 }

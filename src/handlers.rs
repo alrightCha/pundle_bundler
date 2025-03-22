@@ -243,7 +243,6 @@ impl HandlerManager {
 
         tokio::spawn(async move {
             let pumpfun_client = PumpFun::new(payer);
-
             let bonded = pumpfun_client
                 .get_pool_information(&mint_pubkey)
                 .await
@@ -265,25 +264,24 @@ impl HandlerManager {
 
             let blockhash = client.get_latest_blockhash().unwrap();
 
-            let tx = Transaction::new_signed_with_payer(
-                &sell_ixs,
+            let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
+            let tip_ix = jito.get_tip_ix(keypair.pubkey()).await.unwrap();
+
+            let mut instructions: Vec<Instruction> = Vec::new();
+            instructions.extend(sell_ixs);
+            instructions.push(tip_ix);
+
+            let mut transaction = Transaction::new_signed_with_payer(
+                &instructions,
                 Some(&keypair.pubkey()),
                 &[&keypair],
                 blockhash,
             );
 
-            let config = RpcSendTransactionConfig {
-                skip_preflight: true,
-                preflight_commitment: Some(CommitmentLevel::Confirmed),
-                encoding: None,
-                max_retries: None,
-                min_context_slot: None,
-            };
+            // Sign Transaction
+            transaction.sign(&[&keypair], blockhash);
 
-            let signature = client.send_transaction_with_config(&tx, config).unwrap();
-            client
-                .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
-                .unwrap();
+            let signature = jito.one_tx_sell(transaction).await.unwrap();
             println!("Signature: {:?}", signature);
         });
 
@@ -368,7 +366,7 @@ impl HandlerManager {
                 return Json(SellResponse { success: false });
             }
         };
-        
+
         if total_token_balance > 1000.0 {
             tokio::spawn(async move {
                 let client = RpcClient::new(RPC_URL);

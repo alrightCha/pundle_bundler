@@ -2,7 +2,7 @@ use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::jito::jito::JitoBundle;
 use crate::jupiter::swap::swap_ixs;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::{build_transaction, get_ata_balance};
+use crate::solana::utils::{build_transaction, get_ata_balance, test_transactions};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
@@ -221,6 +221,6 @@ pub async fn sell_all_txs(
             &admin_keypair,
         ));
     }
-
+    test_transactions(&client, &transactions).await;
     transactions
 }

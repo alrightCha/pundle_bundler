@@ -6,8 +6,11 @@ use pumpfun::cpi::pump;
 use serde_json::json;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, instruction::Instruction, pubkey::Pubkey,
-    system_instruction, transaction::VersionedTransaction,
+    commitment_config::CommitmentConfig,
+    instruction::Instruction,
+    pubkey::Pubkey,
+    system_instruction,
+    transaction::{Transaction, VersionedTransaction},
 };
 use std::str::FromStr;
 use tokio::time::{sleep, Duration};
@@ -45,6 +48,27 @@ impl JitoBundle {
         let jito_tip_ix =
             system_instruction::transfer(&deployer_pubkey, &jito_tip_account, self.jito_tip_amount);
         Ok(jito_tip_ix)
+    }
+
+    pub async fn one_tx_sell(&self, transaction: Transaction) -> Result<String> {
+        // Serialize the full transaction
+        let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction)?);
+
+        // Send transaction using Jito SDK
+        println!("Sending transaction...");
+        let params = json!({
+            "tx": serialized_tx
+        });
+
+        let response = self.jito_sdk.send_txn(Some(params), true).await?;
+
+        // Extract signature from response
+        let signature = response["result"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Failed to get signature from response"))?;
+        println!("Transaction sent with signature: {}", signature);
+
+        Ok(signature.to_string())
     }
 
     //Requires that transaction is already signed
