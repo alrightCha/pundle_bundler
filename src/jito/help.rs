@@ -69,7 +69,7 @@ pub async fn build_bundle_txs(
 
     let to_sub_for_dev: u64 = to_subtract.clone() + JITO_TIP_AMOUNT;
 
-    let final_dev_buy_amount = dev_with_amount.amount * 96 / 100 - to_sub_for_dev;
+    let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
 
     let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata);
 
@@ -107,7 +107,7 @@ pub async fn build_bundle_txs(
             continue;
         }
 
-        let final_buy_amount = balance * 96 / 100 - to_subtract;
+        let final_buy_amount = balance - to_subtract;
         //Return buy instructions
         let new_ixs = pumpfun_client
             .buy_ixs(

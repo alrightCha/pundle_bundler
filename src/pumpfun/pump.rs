@@ -157,18 +157,19 @@ impl PumpFun {
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await.unwrap();
-        let buy_amount = match with_stimulate {
-            true => self.bonding_curve.get_buy_price(amount_sol).unwrap(),
-            false => {
-                let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
-                bonding_curve_account.get_buy_price(amount_sol).unwrap()
-            }
-        };
 
         let buy_amount_with_slippage = pumpfun::utils::calculate_with_slippage_buy(
             amount_sol,
             slippage_basis_points.unwrap_or(200),
         );
+
+        let buy_amount = match with_stimulate {
+            true => self.bonding_curve.get_buy_price(amount_sol).unwrap(),
+            false => {
+                let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
+                bonding_curve_account.get_buy_price(buy_amount_with_slippage).unwrap()
+            }
+        };
 
         println!("Amount sol: {:?}", amount_sol);
         println!("Buy amount: {:?}", buy_amount);
@@ -195,7 +196,7 @@ impl PumpFun {
             &global_account.fee_recipient,
             pumpfun::cpi::instruction::Buy {
                 _amount: buy_amount,
-                _max_sol_cost: buy_amount_with_slippage,
+                _max_sol_cost: amount_sol,
             },
         ));
 
