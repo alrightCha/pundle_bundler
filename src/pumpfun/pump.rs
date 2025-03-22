@@ -160,11 +160,11 @@ impl PumpFun {
 
         let buy_amount_with_slippage = pumpfun::utils::calculate_with_slippage_buy(
             amount_sol,
-            slippage_basis_points.unwrap_or(200),
+            slippage_basis_points.unwrap_or(500),
         );
 
         let buy_amount = match with_stimulate {
-            true => self.bonding_curve.get_buy_price(amount_sol).unwrap(),
+            true => self.bonding_curve.get_buy_price(buy_amount_with_slippage).unwrap(),
             false => {
                 let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
                 bonding_curve_account.get_buy_price(buy_amount_with_slippage).unwrap()
