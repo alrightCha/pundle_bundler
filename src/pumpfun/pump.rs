@@ -254,9 +254,11 @@ impl PumpFun {
 
         let global_account = self.get_global_account().await?;
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
+        
         let min_sol_output = bonding_curve_account
             .get_sell_price(amount, global_account.fee_basis_points)
             .map_err(pumpfun::error::ClientError::BondingCurveError)?;
+
         let min_sol_output = pumpfun::utils::calculate_with_slippage_sell(
             min_sol_output,
             slippage_basis_points.unwrap_or(500),
@@ -493,6 +495,10 @@ impl PumpFun {
             reserve_token,
         };
         Ok(pool_information)
+    }
+
+    fn calculate_with_slippage_buy(amount: u64, basis_points: u64) -> u64 {
+        amount - (amount * basis_points) / 10000
     }
 }
 

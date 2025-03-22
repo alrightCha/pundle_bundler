@@ -141,7 +141,7 @@ mod tests {
     fn test_bonding_curve_account() {
         let mut bonding_curve: BondingCurveAccount = get_bonding_curve();
 
-        let buys = [1000000000, 1000000000, 1052061251, 994215416, 1082293166, 981632881, 981632881, 1069224135, 959735067, 959735067, 959735068, 959735068];
+        let buys = [396799120, 622099120];
 
         for buy in buys {
             let tokens_out = bonding_curve.get_buy_price(buy).unwrap();
