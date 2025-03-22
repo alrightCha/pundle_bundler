@@ -325,6 +325,7 @@ impl HandlerManager {
             if keypair.pubkey() == mint_pubkey {
                 continue;
             }
+
             let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint_pubkey);
             let balance = client.get_token_account_balance(&ata).unwrap().ui_amount;
             if let Some(balance) = balance {

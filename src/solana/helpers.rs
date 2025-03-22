@@ -1,7 +1,8 @@
+use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::jito::jito::JitoBundle;
-use crate::pumpfun::pump::PumpFun;
 use crate::jupiter::swap::swap_ixs;
-use crate::solana::utils::{get_ata_balance, build_transaction};
+use crate::pumpfun::pump::PumpFun;
+use crate::solana::utils::{build_transaction, get_ata_balance};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
@@ -12,11 +13,23 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use std::collections::{HashMap, HashSet};
-use crate::config::{MAX_RETRIES, JITO_TIP_AMOUNT, RPC_URL};
 
-pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, mint_pubkey: &Pubkey, lut_pubkey: Pubkey, pumpfun_client: PumpFun, client: RpcClient) -> Vec<VersionedTransaction> {
+pub async fn sell_all_txs(
+    admin_keypair: Keypair,
+    all_keypairs: Vec<&Keypair>,
+    mint_pubkey: &Pubkey,
+    lut_pubkey: Pubkey,
+    pumpfun_client: PumpFun,
+    client: RpcClient,
+) -> Vec<VersionedTransaction> {
     println!("Selling all txs...");
-    println!("All Keypairs: {:?}", all_keypairs.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
+    println!(
+        "All Keypairs: {:?}",
+        all_keypairs
+            .iter()
+            .map(|kp| kp.pubkey())
+            .collect::<Vec<Pubkey>>()
+    );
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
     let raw_account = client.get_account(&lut_pubkey).unwrap();
@@ -28,7 +41,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
     };
 
     print!("LUT: {:?}", address_lookup_table_account);
-    
+
     let mut signers_map: HashMap<Pubkey, &Keypair> = HashMap::new();
 
     for keypair in all_keypairs.iter() {
@@ -48,12 +61,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
 
     let mut current_tx_ixs: Vec<Instruction> = Vec::new();
 
-
-    let tip_ix = jito
-        .get_tip_ix(admin_keypair.pubkey())
-        .await
-        .unwrap();
-
+    let tip_ix = jito.get_tip_ix(admin_keypair.pubkey()).await.unwrap();
 
     current_tx_ixs.push(tip_ix);
 
@@ -65,6 +73,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
 
     for (index, keypair) in all_keypairs.iter().enumerate() {
         let balance = client.get_balance(&keypair.pubkey()).unwrap();
+
         if balance < 1_900_000 {
             println!(
                 "Keypair {} has insufficient balance. Skipping sell.",
@@ -145,7 +154,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
             &all_ixs,
             maybe_ix_tx_signers,
             address_lookup_table_account.clone(),
-            None,
+            &admin_keypair,
         );
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
@@ -163,7 +172,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
                 &current_tx_ixs,
                 tx_signers,
                 address_lookup_table_account.clone(),
-                None,
+                &admin_keypair,
             );
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
@@ -171,10 +180,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
             current_tx_ixs.extend(new_ixs);
             if index % 5 == 0 {
                 println!("Adding tip ix to current tx instructions");
-                let tip_ix = jito
-                    .get_tip_ix(admin_keypair.pubkey())
-                    .await
-                    .unwrap();
+                let tip_ix = jito.get_tip_ix(admin_keypair.pubkey()).await.unwrap();
                 current_tx_ixs.push(tip_ix);
             }
         } else {
@@ -212,7 +218,7 @@ pub async fn sell_all_txs(admin_keypair: Keypair, all_keypairs: Vec<&Keypair>, m
             &current_tx_ixs,
             tx_signers,
             address_lookup_table_account.clone(),
-            None,
+            &admin_keypair,
         ));
     }
 

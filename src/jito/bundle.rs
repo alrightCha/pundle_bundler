@@ -180,7 +180,7 @@ pub async fn process_bundle(
         &instructions,
         vec![&admin_kp],
         address_lookup_table_account.clone(),
-        None,
+        &admin_kp,
     );
 
     let tx_size: usize = bincode::serialized_size(&tx).unwrap() as usize;
@@ -202,7 +202,7 @@ pub async fn process_bundle(
             &first_instructions,
             vec![&admin_kp],
             address_lookup_table_account.clone(),
-            None,
+            &admin_kp,
         );
         let _ = jito.one_tx_bundle(first_tx).await.unwrap();
 
@@ -212,7 +212,7 @@ pub async fn process_bundle(
             &second_instructions,
             vec![&admin_kp],
             address_lookup_table_account.clone(),
-            None,
+            &admin_kp,
         );
         let _ = jito.one_tx_bundle(second_tx).await.unwrap();
     } else {
@@ -274,6 +274,7 @@ pub async fn process_bundle(
         lut_pubkey,
         mint_pubkey,
         token_metadata,
+        &admin_kp,
     )
     .await;
 

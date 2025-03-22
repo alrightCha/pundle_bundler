@@ -36,6 +36,7 @@ pub async fn build_bundle_txs(
     lut_pubkey: Pubkey,
     mint_pubkey: Pubkey,
     token_metadata: Create,
+    admin_keypair: &Keypair,
 ) -> Vec<VersionedTransaction> {
     println!("Building bundle txs...");
     let client = RpcClient::new(RPC_URL);
@@ -187,7 +188,7 @@ pub async fn build_bundle_txs(
             &all_ixs,
             maybe_ix_tx_signers,
             address_lookup_table_account.clone(),
-            Some(&mint_keypair),
+            &admin_keypair,
         );
 
         let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
@@ -199,7 +200,7 @@ pub async fn build_bundle_txs(
                 &current_tx_ixs,
                 tx_signers,
                 address_lookup_table_account.clone(),
-                Some(&mint_keypair),   
+                &admin_keypair,   
             );
             transactions.push(new_tx);
             println!("Added new tx to transactions, with size {}", size);
@@ -298,7 +299,7 @@ pub async fn build_bundle_txs(
             &maybe_last_ixs_with_tip,
             maybe_last_tx_signers,
             address_lookup_table_account.clone(),
-            Some(&mint_keypair),
+            &admin_keypair,
         );
 
         let tx_size: usize = bincode::serialized_size(&maybe_last_tx).unwrap() as usize;
@@ -310,7 +311,7 @@ pub async fn build_bundle_txs(
                 &current_tx_ixs,
                 tx_signers.clone(),
                 address_lookup_table_account.clone(),
-                Some(&mint_keypair),
+                &admin_keypair,
             );
 
             let tip_ix = jito
@@ -325,7 +326,7 @@ pub async fn build_bundle_txs(
                 &ixs,
                 last_signer,
                 address_lookup_table_account.clone(),
-                Some(&mint_keypair),
+                &admin_keypair,
             );
             //If we have 4 transactions, meaning this tx will be the last one in the batch, add a tip instruction to it
             if transactions.len() % 5 == 4 {
