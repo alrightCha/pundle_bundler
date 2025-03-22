@@ -14,6 +14,7 @@ use anchor_client::{
     },
 };
 use pumpfun_cpi::instruction::Create;
+use pumpfun_cpi::instruction::Buy;
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
@@ -189,16 +190,30 @@ impl PumpFun {
             instructions.push(create_ata_ix);
         }
 
-        // Create & add buy instruction to request
-        instructions.push(pumpfun::instruction::buy(
-            &keypair,
-            mint,
-            &global_account.fee_recipient,
-            pumpfun::cpi::instruction::Buy {
-                _amount: buy_amount,
-                _max_sol_cost: amount_sol,
-            },
-        ));
+        let bonding_curve: Pubkey = PumpFun::get_bonding_curve_pda(mint).unwrap();
+        let args = Buy {
+            _amount: buy_amount,
+            _max_sol_cost: amount_sol,
+        };
+        let ix = Instruction::new_with_bytes(
+            pumpfun::constants::accounts::PUMPFUN,
+            &args.data(),
+            vec![
+                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new(global_account.fee_recipient, false),
+                AccountMeta::new_readonly(*mint, false),
+                AccountMeta::new(bonding_curve, false),
+                AccountMeta::new(get_associated_token_address(&bonding_curve, mint), false),
+                AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
+                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::RENT, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
+            ],
+        );
+        instructions.push(ix);
 
         Ok(instructions)
     }
