@@ -335,7 +335,7 @@ impl HandlerManager {
 
         println!("Total token balance: {:?}", total_token_balance);
 
-        if total_token_balance < 1000.0 {
+        if total_token_balance < 1000.0 && !with_admin_transfer {
             return Json(SellResponse { success: false });
         }
 
@@ -368,13 +368,15 @@ impl HandlerManager {
                 return Json(SellResponse { success: false });
             }
         };
+        
+        if total_token_balance > 1000.0 {
+            tokio::spawn(async move {
+                let client = RpcClient::new(RPC_URL);
+                let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
 
-        tokio::spawn(async move {
-            let client = RpcClient::new(RPC_URL);
-            let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
-
-            let _ = jito.submit_bundle(txs, mint_pubkey, None).await;
-        });
+                let _ = jito.submit_bundle(txs, mint_pubkey, None).await;
+            });
+        }
 
         if with_admin_transfer {
             tokio::time::sleep(Duration::from_secs(10)).await; //waiting for amounts to reach wallets

@@ -319,6 +319,7 @@ impl PumpFun {
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint);
         let balance = self.rpc.get_token_account_balance(&ata).await?;
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
+        println!("Balance: {:?}", balance_u64);
         let global_account = self.get_global_account().await?;
         let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
 
@@ -326,17 +327,18 @@ impl PumpFun {
             .get_sell_price(balance_u64, global_account.fee_basis_points)
             .map_err(pumpfun::error::ClientError::BondingCurveError)?;
 
+        println!("Min sol: {:?}", min_sol);
+        
         // 500 basis points = 5% slippage
         // Setting slippage to 10000 (100%) means you'll accept any price above min_sol * 0,
         // which could result in getting much less SOL than expected
         let min_sol_output = Self::calculate_with_slippage(
-            min_sol, 3000, // 30% slippage - you'll get at least 70% of min_sol
+            min_sol, 10000, // 100% slippage - you'll get at least 0% of min_sol
         );
 
         let mut instructions: Vec<Instruction> = Vec::new();
 
         let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
-
 
         let args = Sell {
             _amount: balance_u64,

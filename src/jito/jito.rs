@@ -2,6 +2,7 @@ use crate::pumpfun::pump::PumpFun;
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use jito_sdk_rust::JitoJsonRpcSDK;
+use pumpfun::cpi::pump;
 use serde_json::json;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
@@ -90,19 +91,23 @@ impl JitoBundle {
             .await;
         if res.is_err() {
             println!("Error processing bundle. Resubmitting...");
-            let pool_info = pumpfun_client
-                .unwrap()
-                .get_pool_information(&mint)
-                .await;
+            if let Some(pumpfun_client) = pumpfun_client {
+                let pool_info = pumpfun_client.get_pool_information(&mint).await;
 
-            match pool_info {
-                Ok(_) => {
-                    println!("Bonding curve found. Resubmitting bundle...");
-                    return Ok(());
-                }
-                Err(e) => {
-                    println!("Error getting pool information. Resubmitting bundle...: {:?}", e);
-                    return Err(anyhow!("Error getting pool information. Cannot resubmit bundle."));
+                match pool_info {
+                    Ok(_) => {
+                        println!("Bonding curve found. Resubmitting bundle...");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        println!(
+                            "Error getting pool information. Resubmitting bundle...: {:?}",
+                            e
+                        );
+                        return Err(anyhow!(
+                            "Error getting pool information. Cannot resubmit bundle."
+                        ));
+                    }
                 }
             }
         }
