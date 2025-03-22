@@ -114,7 +114,9 @@ pub fn build_transaction(
 
     // Create a vector of references to the keypairs for signing
     let mut signers: Vec<&Keypair> = keypairs.iter().map(|kp| *kp).collect();
-    signers.push(payer);
+    if !signers.iter().any(|kp| kp.pubkey() == payer.pubkey()) {
+        signers.push(payer);
+    }
     println!("Signers: {:?}", signers.iter().map(|kp| kp.pubkey()).collect::<Vec<Pubkey>>());
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
