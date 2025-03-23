@@ -1,30 +1,28 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
-    GetPoolInformationRequest, PoolInformation, RecursivePayRequest, SellAllRequest, SellResponse,
-    UniqueSellRequest, WithdrawAllSolRequest,
+    BumpRequest, BumpResponse, GetPoolInformationRequest, PoolInformation, RecursivePayRequest,
+    SellAllRequest, SellResponse, UniqueSellRequest, WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::utils::get_splits;
+use crate::solana::bump::Bump;
 use crate::solana::recursive_pay::recursive_pay;
 use anchor_spl::associated_token::get_associated_token_address;
 use axum::Json;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
-use solana_client::rpc_config::RpcSendTransactionConfig;
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use solana_sdk::system_instruction;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::transaction::VersionedTransaction;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
-
 use tokio::spawn;
+use tokio::sync::Mutex;
 
 //Params needed for the handlers
 use crate::params::{
@@ -407,5 +405,22 @@ impl HandlerManager {
         let result = recursive_pay(requester, mint, Some(lamports), true).await;
 
         Json(SellResponse { success: result })
+    }
+
+    pub async fn bump_token(&self, Json(payload): Json<BumpRequest>) -> Json<BumpResponse> {
+        let mint_address = payload.mint_address;
+        let lamports: u64 = payload.lamports;
+        let mut bump: Bump = Bump::new(mint_address);
+
+        let new_kp: Pubkey = bump.get_funding_pubkey();
+        let clone_admin: Keypair = self.admin_kp.insecure_clone();
+        let fund_ix = system_instruction::transfer(&self.admin_kp.pubkey(), &new_kp, lamports);
+
+        tokio::spawn(async move {
+            bump.send_tx(vec![fund_ix], vec![&clone_admin]).await;
+            let _ = bump.bump();
+        });
+
+        Json(BumpResponse { success: true })
     }
 }

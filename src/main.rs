@@ -58,6 +58,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //setup app
     let app = Router::new()
         .route("/", get(health_check))
+        .route("/bump", post ({
+            let handler_manager = Arc::clone(&handler_manager);
+            move |payload| {
+                let handler_manager = Arc::clone(&handler_manager);
+                async move {handler_manager.lock().await.bump_token(payload).await }
+            }
+        }))
         .route("/get-bundle", post({
             let handler_manager = Arc::clone(&handler_manager);
             move |payload| {

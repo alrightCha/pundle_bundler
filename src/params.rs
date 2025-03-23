@@ -103,6 +103,17 @@ pub struct PoolInformation {
 }
 
 
+#[derive(Deserialize)]
+pub struct BumpRequest {
+    pub mint_address: String,
+    pub lamports: u64,
+}
+
+#[derive(Serialize)]
+pub struct BumpResponse {
+    pub success: bool,
+}
+
 #[derive(Debug)]
 pub struct KeypairWithAmount {
     pub keypair: Keypair,

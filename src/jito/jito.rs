@@ -2,7 +2,6 @@ use crate::pumpfun::pump::PumpFun;
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use jito_sdk_rust::JitoJsonRpcSDK;
-use pumpfun::cpi::pump;
 use serde_json::json;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
