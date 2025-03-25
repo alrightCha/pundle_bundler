@@ -369,8 +369,11 @@ impl HandlerManager {
             tokio::spawn(async move {
                 let client = RpcClient::new(RPC_URL);
                 let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
-
-                let _ = jito.submit_bundle(txs, mint_pubkey, None).await;
+                let chunks: Vec<_> = txs.chunks(5).collect();
+                for chunk in chunks {
+                    let chunk_vec = chunk.to_vec();
+                    let _ = jito.submit_bundle(chunk_vec, mint_pubkey, None).await;
+                }
             });
         }
 
