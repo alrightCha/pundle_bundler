@@ -172,38 +172,7 @@ impl HandlerManager {
         println!("Response: {:?}", response);
         Json(response)
     }
-
-    //Receive request to get a bundle
-    // - Returns keypairs involved in the bundle
-    pub async fn get_bundle_wallets(
-        &self,
-        Json(payload): Json<GetBundleWalletsRequest>,
-    ) -> Json<GetBundleWalletsResponse> {
-        let requester_pubkey = payload.requester_pubkey;
-
-        // Get keypairs using the existing utility function
-        let keypairs = match get_keypairs_for_pubkey(&requester_pubkey) {
-            Ok(kps) => kps,
-            Err(e) => {
-                eprintln!("Error getting keypairs: {}", e);
-                Vec::new() // Return empty vector if there's an error
-            }
-        };
-
-        // Convert keypairs to BundleWallet format
-        let bundle_wallets: Vec<BundleWallet> = keypairs
-            .iter()
-            .map(|kp| BundleWallet {
-                pubkey: kp.pubkey().to_string(),
-                secret_key: bs58::encode(kp.to_bytes()).into_string(),
-            })
-            .collect();
-
-        Json(GetBundleWalletsResponse {
-            keypairs: bundle_wallets,
-        })
-    }
-
+    
     //Get pool information for given token
     pub async fn get_pool_information(
         &self,
@@ -307,7 +276,7 @@ impl HandlerManager {
         let pumpfun_client = PumpFun::new(payer);
 
         // Get keypairs using the existing utility function and filter out the mint keypair
-        let mut keypairs = match get_keypairs_for_pubkey(&requester) {
+        let mut keypairs = match get_keypairs_for_pubkey(&requester, &mint) {
             Ok(kps) => kps,
             Err(e) => {
                 eprintln!("Error getting keypairs: {}", e);

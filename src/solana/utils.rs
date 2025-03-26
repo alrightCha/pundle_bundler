@@ -133,9 +133,10 @@ pub fn get_slot_and_blockhash(
 
 pub fn get_keypairs_for_pubkey(
     pubkey: &String,
+    mint: &String
 ) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
     let mut keypairs = Vec::new();
-    let dir_path = format!("accounts/{}", pubkey);
+    let dir_path = format!("accounts/{}/{}", pubkey, mint);
     let dir_entries = std::fs::read_dir(dir_path)?;
     // Iterate over directory entries
     for entry in dir_entries {

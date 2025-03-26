@@ -64,13 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {handler_manager.lock().await.bump_token(payload).await }
             }
         }))
-        .route("/get-bundle", post({
-            let handler_manager = Arc::clone(&handler_manager);
-            move |payload| {
-                let handler_manager = Arc::clone(&handler_manager);
-                async move { handler_manager.lock().await.get_bundle_wallets(payload).await }
-            }
-        }))
         .route("/post-bundle", post({
             let handler_manager = Arc::clone(&handler_manager);
             let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
