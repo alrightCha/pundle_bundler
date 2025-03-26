@@ -282,7 +282,11 @@ pub async fn build_bundle_txs(
 
         //Means that maybe last tx has different signers than normal, and we add the dev keypair
         if !added_tip_ix {
-            maybe_last_tx_signers.push(&dev_with_amount.keypair);
+            //Might be just 1 tx, which always contains dev keypair, so only add when necessary 
+            let has_dev =  tx_signers.contains(&&dev_with_amount.keypair);
+            if !has_dev{
+                maybe_last_tx_signers.push(&dev_with_amount.keypair);
+            }
         }
 
         let maybe_last_tx = build_transaction(
