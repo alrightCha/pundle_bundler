@@ -143,12 +143,6 @@ pub async fn build_bundle_txs(
             {
                 tx_signers.push(&kp.keypair);
             }
-            if signer == dev_with_amount.keypair.pubkey() {
-                tx_signers.push(&dev_with_amount.keypair);
-            }
-            if signer == mint_keypair.pubkey() {
-                tx_signers.push(&mint_keypair);
-            }
         }
 
         for ix in &new_ixs {
@@ -169,12 +163,6 @@ pub async fn build_bundle_txs(
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
                 maybe_ix_tx_signers.push(&kp.keypair);
-            }
-            if signer == dev_with_amount.keypair.pubkey() {
-                maybe_ix_tx_signers.push(&dev_with_amount.keypair);
-            }
-            if signer == mint_keypair.pubkey() {
-                maybe_ix_tx_signers.push(&mint_keypair);
             }
         }
 
@@ -269,12 +257,6 @@ pub async fn build_bundle_txs(
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
                 tx_signers.push(&kp.keypair);
-            }
-            if signer == dev_with_amount.keypair.pubkey() {
-                tx_signers.push(&dev_with_amount.keypair);
-            }
-            if signer == mint_keypair.pubkey() {
-                tx_signers.push(&mint_keypair);
             }
         }
 
