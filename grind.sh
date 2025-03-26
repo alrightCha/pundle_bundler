@@ -23,8 +23,14 @@ if [[ $? -eq 0 ]]; then
   # Find the latest .json file created, assuming it's the new keypair file
   keypair_file=$(ls -t | grep '.json' | head -n 1)
   if [[ -n $keypair_file ]]; then
-    chmod 777 "$keypair_file"
-    echo "Keypair generated at: $(pwd)/$keypair_file"
+    # Ensure the file is in the correct location
+    keypair_dir=${keypair_file%.json}
+    echo "new directory: $keypair_dir"
+    mkdir "$keypair_dir"
+    mkdir $keypair_file
+    mv "$keypair_file" "./$keypair_dir"
+    chmod 777 "accounts/$owner/$keypair_file"
+    echo "Keypair generated at: accounts/$owner/$keypair_file"
     exit 0  # Exit with status 0 for success
   else
     echo "Keypair file not found" >&2

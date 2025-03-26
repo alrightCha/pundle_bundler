@@ -33,7 +33,7 @@ pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, wi
     let mut total_available: u64 = 0;
 
     // Directory containing keypair JSON files
-    let dir_path = format!("accounts/{}", from);
+    let dir_path = format!("accounts/{}/{}", from, mint);
 
     // Read the directory
     let dir_entries = match fs::read_dir(&dir_path) {

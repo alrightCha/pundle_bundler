@@ -24,7 +24,7 @@ use std::path::Path;
 use std::result::Result::Ok;
 
 //Create a keypair under the keys/requester/keypair_pubkey.json directory
-pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error::Error>> {
+pub fn create_keypair(requester: &String, mint: &String) -> Result<Keypair, Box<dyn std::error::Error>> {
     let keypair = Keypair::new();
 
     // Create keys directory if it doesn't exist
@@ -35,7 +35,7 @@ pub fn create_keypair(requester: &String) -> Result<Keypair, Box<dyn std::error:
     std::fs::create_dir_all(&requester_dir)?;
 
     // Create file path with keypair public key as filename
-    let file_path = format!("{}/{}.json", requester_dir, keypair.pubkey());
+    let file_path = format!("{}/{}/{}.json", requester_dir, mint.to_string(), keypair.pubkey());
 
     println!("Saving keypair to path: {}", file_path); // Debug print
 

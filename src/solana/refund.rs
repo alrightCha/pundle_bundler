@@ -16,7 +16,7 @@ pub async fn refund_keypairs(from: String, recipient: String, mint: String) {
     // Directory containing keypair JSON files
     let dir_path = match from == "" {
         true => "accounts/".to_string(), 
-        false => format!("accounts/{}", from)
+        false => format!("accounts/{}/{}", from, mint)
     }; 
 
     // Read the directory

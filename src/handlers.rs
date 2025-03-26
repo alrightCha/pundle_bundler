@@ -85,7 +85,7 @@ impl HandlerManager {
         //Creating mint keypair ending in pump
         let mint_pubkey = grind(requester_pubkey.clone()).unwrap();
 
-        let dev_keypair = create_keypair(&requester_pubkey).unwrap();
+        let dev_keypair = create_keypair(&requester_pubkey, &mint_pubkey).unwrap();
 
         let token_metadata = Create {
             _name: payload.name,
@@ -95,8 +95,8 @@ impl HandlerManager {
         };
 
         let mint = load_keypair(&format!(
-            "accounts/{}/{}.json",
-            requester_pubkey, mint_pubkey
+            "accounts/{}/{}/{}.json",
+            requester_pubkey, mint_pubkey, mint_pubkey
         ))
         .unwrap();
 
@@ -116,7 +116,7 @@ impl HandlerManager {
         let keypairs_with_amount: Vec<KeypairWithAmount> = wallets_buy_amount
             .iter()
             .map(|amount| KeypairWithAmount {
-                keypair: create_keypair(&requester_pubkey).unwrap(),
+                keypair: create_keypair(&requester_pubkey, &mint_pubkey).unwrap(),
                 amount: *amount,
             })
             .collect();
@@ -233,7 +233,7 @@ impl HandlerManager {
         println!("Amount: {:?}", amount);
         println!("Wallet: {:?}", wallet);
         println!("Requester: {:?}", requester);
-        let keypair = load_keypair(&format!("accounts/{}/{}.json", requester, wallet)).unwrap();
+        let keypair = load_keypair(&format!("accounts/{}/{}/{}.json", requester, mint_pubkey, wallet)).unwrap();
 
         let client = RpcClient::new(RPC_URL);
 

@@ -47,8 +47,9 @@ pub async fn process_bundle(
     let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
     let dev_keypair_path = format!(
-        "accounts/{}/{}.json",
+        "accounts/{}/{}/{}.json",
         requester_pubkey,
+        mint.pubkey().to_string(),
         dev_keypair_with_amount.keypair.pubkey()
     );
 
