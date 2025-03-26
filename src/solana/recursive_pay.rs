@@ -141,7 +141,7 @@ pub async fn recursive_pay(from: String, mint: String, lamports: Option<u64>, wi
     //Gaurd to avoid spam which results in partial loss of funds due to fees
     if !with_admin_transfer {
         println!("Total wallets balance: {}", total_wallets_balance);
-        let min_balance_for_transfer = 2000000 * wallet_count as u64;
+        let min_balance_for_transfer = 3000000 * wallet_count as u64;
         if total_wallets_balance < min_balance_for_transfer {
             println!("Not enough balance to transfer");
             return false;
