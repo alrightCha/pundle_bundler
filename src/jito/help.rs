@@ -142,6 +142,10 @@ pub async fn build_bundle_txs(
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
                 tx_signers.push(&kp.keypair);
+            } else if signer == dev_with_amount.keypair.pubkey() {
+                tx_signers.push(&dev_with_amount.keypair);
+            } else if signer == mint_keypair.pubkey() {
+                tx_signers.push(&mint_keypair);
             }
         }
 
@@ -150,6 +154,7 @@ pub async fn build_bundle_txs(
         }
 
         let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
+
         for ix in &all_ixs {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
                 maybe_ix_unique_signers.insert(acc.pubkey);
@@ -157,12 +162,17 @@ pub async fn build_bundle_txs(
         }
 
         let mut maybe_ix_tx_signers: Vec<&Keypair> = Vec::new();
+
         for signer in maybe_ix_unique_signers {
             if let Some(kp) = others_with_amount
                 .iter()
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
                 maybe_ix_tx_signers.push(&kp.keypair);
+            } else if signer == dev_with_amount.keypair.pubkey() {
+                maybe_ix_tx_signers.push(&dev_with_amount.keypair);
+            } else if signer == mint_keypair.pubkey() {
+                maybe_ix_tx_signers.push(&mint_keypair);
             }
         }
 
@@ -257,6 +267,10 @@ pub async fn build_bundle_txs(
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
                 tx_signers.push(&kp.keypair);
+            } else if signer == dev_with_amount.keypair.pubkey() {
+                tx_signers.push(&dev_with_amount.keypair);
+            } else if signer == mint_keypair.pubkey() {
+                tx_signers.push(&mint_keypair);
             }
         }
 
