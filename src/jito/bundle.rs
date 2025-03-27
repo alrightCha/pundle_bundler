@@ -177,6 +177,7 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
+    
     let tx = build_transaction(
         &client,
         &instructions,
@@ -314,7 +315,7 @@ pub async fn process_bundle(
     let late_txs_chunks: std::slice::Chunks<'_, VersionedTransaction> = late_txs.chunks(5);
 
     print!("We received {:?} late bundles", late_txs_chunks.len());
-    
+
     for chunk in late_txs_chunks {
         // Only send first chunk for testing
         let _ = jito

@@ -218,7 +218,8 @@ impl BundleTransactions {
         let rent = Rent::default();
         let rent_exempt_min = rent.minimum_balance(0);
 
-        let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
+        let for_many: u64 = BUFFER_AMOUNT * std::cmp::max(self.keypairs_to_treat.len(), 10) as u64; 
+        let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + for_many;
 
         let final_dev_buy_amount = dev_amount - to_sub_for_dev;
 
@@ -244,6 +245,8 @@ impl BundleTransactions {
 
         all_ixs.push(mint_ix);
         all_ixs.extend(dev_ix);
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+        all_ixs.push(priority_fee_ix);
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
 
