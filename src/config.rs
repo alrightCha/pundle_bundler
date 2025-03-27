@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use axum_server::tls_rustls::RustlsConfig;
 use std::env;
 
-pub const RPC_URL: &str = "https://mainnet.helius-rpc.com/?api-key=9291504f-fedf-4c67-8335-1a415862badf";
+pub const RPC_URL: &str = "https://mainnet.helius-rpc.com/?api-key=916c20cdf-1c1b-44b2-8caa-7597b70d916a";
 pub const ORCHESTRATOR_URL: &str = "http://localhost:3001/bundled";
 pub const ADMIN_PUBKEY: &str = "FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH";
 pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
