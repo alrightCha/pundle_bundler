@@ -101,7 +101,7 @@ impl BundleTransactions {
         dev_amount: u64,
         token_metadata: Create,
     ) -> Vec<VersionedTransaction> {
-        let mut tip_ix_count = 0; 
+        let mut tip_ix_count = 0;
         let rent = Rent::default();
         let rent_exempt_min = rent.minimum_balance(0);
 
@@ -166,7 +166,7 @@ impl BundleTransactions {
                     if !can_add {
                         current_tx_ixs.pop();
                         current_tx_ixs.push(tip_ix);
-                        tip_ix_count += 1; 
+                        tip_ix_count += 1;
                         self.treated_keypairs = index - 2; //Not only did we not add the current item, we also popped the last one.
                         should_break = true;
                     }
@@ -212,7 +212,7 @@ impl BundleTransactions {
                     &self.dev_keypair,
                 );
                 transactions.push(tx);
-                tip_ix_count += 1; 
+                tip_ix_count += 1;
             } else {
                 if transactions.len() == 4 {
                     current_tx_ixs.pop();
@@ -226,7 +226,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     transactions.push(tx);
-                    tip_ix_count += 1; 
+                    tip_ix_count += 1;
                     self.treated_keypairs = self.keypairs_to_treat.len() - 1; // removed last instruction only.
                 } else {
                     let tx_signers = self.get_tx_signers(&current_tx_ixs);
@@ -253,42 +253,47 @@ impl BundleTransactions {
                     );
                     transactions.push(before_last_tx);
                     transactions.push(last_tx);
-                    tip_ix_count += 1; 
+                    tip_ix_count += 1;
                 }
             }
         }
-        print!("Adding {:?} transactions in the first bundle with {:?} tip instructions", transactions.len(), tip_ix_count);
-        test_transactions(&self.client, &transactions).await; 
+        print!(
+            "Adding {:?} transactions in the first bundle with {:?} tip instructions",
+            transactions.len(),
+            tip_ix_count
+        );
+        test_transactions(&self.client, &transactions).await;
         transactions
     }
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
-        let mut tip_ix_count =  0; 
+        let mut tip_ix_count = 0;
 
         let mut txs: Vec<VersionedTransaction> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
         let mut all_ixs: Vec<Instruction> = Vec::new();
 
-        for (index, keypair) in self.keypairs_to_treat.iter().enumerate() {
-            if index >= self.treated_keypairs {
-                let buy_ixs: Vec<Instruction> = self
-                    .pumpfun_client
-                    .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
-                    .await
-                    .unwrap();
-                all_ixs.extend(buy_ixs);
-            }
+        for keypair in self.keypairs_to_treat.iter() {
+            let buy_ixs: Vec<Instruction> = self
+                .pumpfun_client
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
+                .await
+                .unwrap();
+            all_ixs.extend(buy_ixs);
         }
 
         let mut current_ixs: Vec<Instruction> = Vec::new();
 
-        for ix in all_ixs {
+        for (index, ix) in all_ixs.iter().enumerate() {
+            if index < self.treated_keypairs {
+                continue;
+            }
             let ixs = vec![ix.clone()];
             let can = self.is_allowed(&current_ixs, &ixs).await;
             if can {
                 //Can, so adding latest ix to current ixs
-                current_ixs.push(ix);
+                current_ixs.push(ix.clone());
             } else {
                 let mut new_ixs: Vec<Instruction> = Vec::new();
                 //Need to add tip instruction
@@ -306,7 +311,7 @@ impl BundleTransactions {
                             new_ixs.push(last_ix);
                         }
                         current_ixs.push(tip_ix);
-                        tip_ix_count += 1; 
+                        tip_ix_count += 1;
                     }
                 }
                 let tx_signers = self.get_tx_signers(&current_ixs);
@@ -332,7 +337,7 @@ impl BundleTransactions {
             let can_add_tip_ix = self.is_allowed(&current_ixs, &in_vec).await;
             if can_add_tip_ix {
                 current_ixs.push(tip_ix);
-                tip_ix_count += 1; 
+                tip_ix_count += 1;
                 let signers = self.get_tx_signers(&current_ixs);
                 let last_tx = build_transaction(
                     &self.client,
@@ -368,7 +373,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(tx);
-                    tip_ix_count += 1; 
+                    tip_ix_count += 1;
                 } else {
                     //Add tip ix and add last tx with tip ix as last unique tx
                     let tip_ix = self
@@ -385,7 +390,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(tx);
-                    tip_ix_count += 1; 
+                    tip_ix_count += 1;
                     current_ixs.push(tip_ix);
                     let signers = self.get_tx_signers(&current_ixs);
                     let last_tx = build_transaction(
@@ -396,11 +401,15 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(last_tx);
-                    tip_ix_count += 1; 
+                    tip_ix_count += 1;
                 }
             }
         }
-        print!("Sending {:?} transactions as late bundles with {:?} tip instructions", txs.len(), tip_ix_count);
+        print!(
+            "Sending {:?} transactions as late bundles with {:?} tip instructions",
+            txs.len(),
+            tip_ix_count
+        );
         test_transactions(&self.client, &txs).await;
         txs
     }
