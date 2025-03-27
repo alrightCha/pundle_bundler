@@ -172,7 +172,7 @@ impl HandlerManager {
         println!("Response: {:?}", response);
         Json(response)
     }
-    
+
     //Get pool information for given token
     pub async fn get_pool_information(
         &self,
@@ -202,7 +202,11 @@ impl HandlerManager {
         println!("Amount: {:?}", amount);
         println!("Wallet: {:?}", wallet);
         println!("Requester: {:?}", requester);
-        let keypair = load_keypair(&format!("accounts/{}/{}/{}.json", requester, mint_pubkey, wallet)).unwrap();
+        let keypair = load_keypair(&format!(
+            "accounts/{}/{}/{}.json",
+            requester, mint_pubkey, wallet
+        ))
+        .unwrap();
 
         let client = RpcClient::new(RPC_URL);
 
@@ -292,9 +296,14 @@ impl HandlerManager {
             }
 
             let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint_pubkey);
-            let balance = client.get_token_account_balance(&ata).unwrap().ui_amount;
-            if let Some(balance) = balance {
-                total_token_balance += balance;
+            let balance = client.get_token_account_balance(&ata);
+            match balance {
+                Ok(ui_amount) => {
+                    if let Some(ui_amount) = ui_amount.ui_amount {
+                        total_token_balance += ui_amount
+                    }
+                }
+                Err(_) => println!("Token account balance not found"),
             }
         }
 
