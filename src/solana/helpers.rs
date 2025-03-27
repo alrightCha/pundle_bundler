@@ -31,7 +31,7 @@ pub async fn sell_all_txs(
             .map(|kp| kp.pubkey())
             .collect::<Vec<Pubkey>>()
     );
-    let mut tips_count = 0; 
+    let mut tips_count = 0;
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
     let raw_account = client.get_account(&lut_pubkey).unwrap();
@@ -114,6 +114,8 @@ pub async fn sell_all_txs(
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
     let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
+    current_tx_ixs.push(priority_fee_ix);
 
     for ix in ixs {
         let mut maybe_ixs: Vec<Instruction> = Vec::new();
@@ -135,6 +137,8 @@ pub async fn sell_all_txs(
             current_tx_ixs.push(ix);
         } else {
             let mut new_ixs: Vec<Instruction> = Vec::new();
+            let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
+            new_ixs.push(priority_fee_ix);
             new_ixs.push(ix);
             if transactions.len() % 5 == 4 {
                 let mut maybe_with_tip: Vec<Instruction> = Vec::new();
@@ -151,7 +155,7 @@ pub async fn sell_all_txs(
                         new_ixs.push(revert_ix);
                     }
                     current_tx_ixs.push(tip_ix);
-                    tips_count += 1; 
+                    tips_count += 1;
                 }
             }
             let tx_signers = get_tx_signers(&current_tx_ixs, &all_signers);
@@ -206,21 +210,25 @@ pub async fn sell_all_txs(
                 //Add 2 txs
                 transactions.push(first_tx);
                 transactions.push(tip_tx);
-                tips_count += 1; 
+                tips_count += 1;
             } else {
                 //Add 3 txs
                 transactions.push(tip_tx.clone());
-                tips_count += 1; 
+                tips_count += 1;
                 transactions.push(first_tx);
                 transactions.push(tip_tx);
-                tips_count += 1; 
+                tips_count += 1;
             }
         } else {
             transactions.push(one_tx);
-            tips_count += 1; 
+            tips_count += 1;
         }
     }
-    print!("Sending {:?} sell transactions with {:?} tip instructions", transactions.len(), tips_count);
+    print!(
+        "Sending {:?} sell transactions with {:?} tip instructions",
+        transactions.len(),
+        tips_count
+    );
     test_transactions(&client, &transactions).await;
     transactions
 }
