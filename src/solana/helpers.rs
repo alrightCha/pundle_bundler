@@ -31,6 +31,7 @@ pub async fn sell_all_txs(
             .map(|kp| kp.pubkey())
             .collect::<Vec<Pubkey>>()
     );
+    
     let mut tips_count = 0;
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
@@ -72,15 +73,6 @@ pub async fn sell_all_txs(
 
     for keypair in all_keypairs.iter() {
         all_signers.push(keypair.insecure_clone());
-        let balance = client.get_balance(&keypair.pubkey()).unwrap();
-
-        if balance < 1_000_000 {
-            println!(
-                "Keypair {} has insufficient balance. Skipping sell.",
-                keypair.pubkey()
-            );
-            continue;
-        }
 
         let new_ixs: Option<Vec<Instruction>> = match token_bonded {
             true => {
@@ -94,19 +86,13 @@ pub async fn sell_all_txs(
                 let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;
                 match pump_ixs {
                     Ok(ixs) => Some(ixs),
-                    Err(error) => {
-                        println!("Error occurred: {:?}", error.to_string());
-                        print!(
-                            "Error finding instructions for keypair {:?}",
-                            keypair.pubkey().to_string()
-                        );
-                        None
-                    }
+                    Err(_) => None
                 }
             }
         };
 
         if let Some(new_ixs) = new_ixs {
+            println!("Passing sell ixs {:?} for {:?}", new_ixs.len(), keypair.pubkey().to_string());
             ixs.extend(new_ixs);
         }
     }

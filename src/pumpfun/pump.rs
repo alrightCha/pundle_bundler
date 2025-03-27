@@ -340,7 +340,7 @@ impl PumpFun {
         // Setting slippage to 10000 (100%) means you'll accept any price above min_sol * 0,
         // which could result in getting much less SOL than expected
         let min_sol_output = Self::calculate_with_slippage(
-            min_sol, 1000, // 100% slippage - you'll get at least 0% of min_sol
+            min_sol, 1000, // 10% slippage - you'll get at least 0% of min_sol
         );
 
         let mut instructions: Vec<Instruction> = Vec::new();
