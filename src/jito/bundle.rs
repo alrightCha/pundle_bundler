@@ -1,17 +1,18 @@
+use core::time;
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
 use solana_sdk::{
     account::Account,
-    address_lookup_table::state::AddressLookupTable,
-    address_lookup_table::AddressLookupTableAccount,
+    address_lookup_table::{state::AddressLookupTable, AddressLookupTableAccount},
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
+    transaction::VersionedTransaction,
 };
-use std::{env, sync::Arc};
+use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
-use super::help::build_bundle_txs;
+use super::help::BundleTransactions;
 use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
@@ -266,36 +267,58 @@ pub async fn process_bundle(
     }
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction
-    let mint_pubkey = mint.pubkey();
-
-    let transactions = build_bundle_txs(
-        dev_keypair_with_amount,
+    let mut txs_builder: BundleTransactions = BundleTransactions::new(
+        dev_keypair_with_amount.keypair,
         mint,
-        keypairs_with_amount,
         lut_pubkey,
-        mint_pubkey,
-        token_metadata,
-        &admin_kp,
-    )
-    .await;
+        keypairs_with_amount,
+    );
 
-    // Split transactions into batches of 5
-    let chunks: Vec<_> = transactions.chunks(5).collect();
-    let total_chunks = chunks.len();
-    let last_chunk_size = chunks.last().map_or(0, |chunk| chunk.len());
+    //Submitting ata bundles
+    let create_ata_txs: Vec<VersionedTransaction> = txs_builder.create_atas().await;
+    print!("Create ata txs length: {:?}", create_ata_txs.len());
+    let ata_chunks: std::slice::Chunks<'_, VersionedTransaction> = create_ata_txs.chunks(5);
 
-    println!("Total number of chunks: {}", total_chunks);
-    println!("Number of transactions in last chunk: {}", last_chunk_size);
+    for chunk in ata_chunks {
+        // Only send first chunk for testing
+        let _ = jito
+            .submit_bundle(chunk.to_vec(), mint.pubkey(), Some(&pumpfun_client))
+            .await
+            .unwrap();
+    }
+
+    //Submitting first bundle
+    let first_bundle: Vec<VersionedTransaction> = txs_builder
+        .collect_first_bundle_txs(dev_keypair_with_amount.amount, token_metadata)
+        .await;
 
     // Only send first chunk for testing
-    if let Some(first_chunk) = chunks.first() {
-        println!(
-            "Attempting to submit first bundle of {} transactions...",
-            first_chunk.len()
-        );
-        let chunk_vec = first_chunk.to_vec();
+    let _ = jito
+        .submit_bundle(first_bundle, mint.pubkey(), Some(&pumpfun_client))
+        .await
+        .unwrap();
+
+    //Check every 500ms if token is live, then build and submit rest of txs
+    let mut is_live: bool = false;
+
+    while !is_live {
+        let live = pumpfun_client.is_token_live(&mint.pubkey()).await;
+        if live {
+            is_live = true;
+        } else {
+            sleep(Duration::from_millis(500));
+        }
+    }
+
+    let late_txs = txs_builder.collect_rest_txs().await;
+    let late_txs_chunks: std::slice::Chunks<'_, VersionedTransaction> = late_txs.chunks(5);
+
+    print!("We received {:?} late bundles", late_txs_chunks.len());
+    
+    for chunk in late_txs_chunks {
+        // Only send first chunk for testing
         let _ = jito
-            .submit_bundle(chunk_vec, mint.pubkey(), Some(&pumpfun_client))
+            .submit_bundle(chunk.to_vec(), mint.pubkey(), Some(&pumpfun_client))
             .await
             .unwrap();
     }

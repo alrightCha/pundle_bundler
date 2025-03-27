@@ -3,7 +3,9 @@ use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::{build_transaction, test_transactions};
+use crate::solana::utils::{build_transaction, load_keypair, test_transactions};
+use axum::http::Version;
+use dotenv::dotenv;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -17,8 +19,9 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use std::collections::HashSet;
+use std::env;
+use std::slice::Chunks;
 use std::sync::Arc;
-
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
 dev_keypair_with_amount: KeypairWithAmount,
@@ -27,319 +30,524 @@ requester_pubkey: String,
 token_metadata: CreateTokenMetadata
 */
 
-pub async fn build_bundle_txs(
-    dev_with_amount: KeypairWithAmount,
-    mint_keypair: &Keypair,
-    others_with_amount: Vec<KeypairWithAmount>,
-    lut_pubkey: Pubkey,
-    mint_pubkey: Pubkey,
-    token_metadata: Create,
-    admin_keypair: &Keypair,
-) -> Vec<VersionedTransaction> {
-    println!("Building bundle txs...");
-    let client = RpcClient::new(RPC_URL);
+pub struct BundleTransactions {
+    admin_keypair: Keypair,
+    dev_keypair: Keypair,
+    mint_keypair: Keypair,
+    client: RpcClient,
+    pumpfun_client: PumpFun,
+    jito: JitoBundle,
+    address_lookup_table_account: AddressLookupTableAccount,
+    keypairs_to_treat: Vec<KeypairWithAmount>,
+    treated_keypairs: usize,
+}
 
-    let jito_rpc = RpcClient::new_with_commitment(
-        RPC_URL.to_string(),
-        solana_sdk::commitment_config::CommitmentConfig::confirmed(),
-    );
+const MAX_TX_SIZE: usize = 1232;
 
-    let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
-    let dev: Keypair = dev_with_amount.keypair.insecure_clone();
-    let payer: Arc<Keypair> = Arc::new(dev);
+impl BundleTransactions {
+    pub fn new(
+        dev_keypair: Keypair,
+        mint_keypair: &Keypair,
+        lut_pubkey: Pubkey,
+        others_with_amount: Vec<KeypairWithAmount>,
+    ) -> Self {
+        dotenv().ok();
+        //Load admin keypair
+        let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
+        let admin_keypair = load_keypair(&admin_keypair_path).unwrap();
 
-    let mut pumpfun_client = PumpFun::new(payer);
+        let client = RpcClient::new(RPC_URL);
 
-    let raw_account = client.get_account(&lut_pubkey).unwrap();
-    let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+        let jito_rpc = RpcClient::new_with_commitment(
+            RPC_URL.to_string(),
+            solana_sdk::commitment_config::CommitmentConfig::confirmed(),
+        );
 
-    let address_lookup_table_account = AddressLookupTableAccount {
-        key: lut_pubkey,
-        addresses: address_lookup_table.addresses.to_vec(),
-    };
+        let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
-    //BUILD INSTRUCTIONS
+        let dev: Keypair = dev_keypair.insecure_clone();
+        let payer: Arc<Keypair> = Arc::new(dev);
 
-    //calculating the max amount of lamports to buy with
-    let rent = Rent::default();
-    let rent_exempt_min = rent.minimum_balance(0);
+        let pumpfun_client = PumpFun::new(payer);
 
-    let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
+        let raw_account = client.get_account(&lut_pubkey).unwrap();
+        let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
-    let final_dev_buy_amount = dev_with_amount.amount - to_sub_for_dev;
+        let address_lookup_table_account = AddressLookupTableAccount {
+            key: lut_pubkey,
+            addresses: address_lookup_table.addresses.to_vec(),
+        };
 
-    let mint_ix = pumpfun_client.create_instruction(&mint_keypair, token_metadata);
+        let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
+        let treated_keypairs: usize = 0;
+        let mint_keypair: Keypair = mint_keypair.insecure_clone();
 
-    let dev_ix = pumpfun_client
-        .buy_ixs(
-            &mint_pubkey,
-            &dev_with_amount.keypair,
-            final_dev_buy_amount,
-            None,
-            true,
-        )
-        .await
-        .unwrap();
+        Self {
+            admin_keypair,
+            dev_keypair,
+            mint_keypair,
+            client,
+            pumpfun_client,
+            jito,
+            address_lookup_table_account,
+            keypairs_to_treat,
+            treated_keypairs,
+        }
+    }
 
-    //TODO: add to params
-    let mint_pubkey: &Pubkey = &mint_keypair.pubkey();
-
-    let mut transactions: Vec<VersionedTransaction> = Vec::new();
-
-    let mut current_tx_ixs: Vec<Instruction> = Vec::new();
-    current_tx_ixs.push(mint_ix);
-    current_tx_ixs.extend(dev_ix);
-    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
-    current_tx_ixs.push(priority_fee_ix);
-
-    let mut added_tip_ix: bool = false;
-
-    for keypair in others_with_amount.iter() {
-        let balance = client.get_balance(&keypair.keypair.pubkey()).unwrap();
-        if balance < keypair.amount {
-            println!(
-                "Keypair {} has insufficient balance. Skipping buy.",
-                keypair.keypair.pubkey()
+    pub async fn create_atas(&mut self) -> Vec<VersionedTransaction> {
+        let mut ata_txs: Vec<VersionedTransaction> = Vec::new();
+        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let dev_ata = self.pumpfun_client.create_ata(
+            &self.dev_keypair.pubkey(),
+            &self.dev_keypair.pubkey(),
+            &self.mint_keypair.pubkey(),
+        );
+        current_tx_ixs.push(dev_ata);
+        for keypair in self.keypairs_to_treat.iter() {
+            let ata_ix: Instruction = self.pumpfun_client.create_ata(
+                &self.dev_keypair.pubkey(),
+                &keypair.keypair.pubkey(),
+                &self.mint_keypair.pubkey(),
             );
-            continue;
+            let in_vec: Vec<Instruction> = vec![ata_ix.clone()];
+            let can_add = self.is_allowed(&current_tx_ixs, &in_vec).await;
+            if can_add {
+                current_tx_ixs.push(ata_ix);
+            } else {
+                let mut new_tx_ixs: Vec<Instruction> = Vec::new();
+                if ata_txs.len() == 4 {
+                    let jito_tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let in_vec: Vec<Instruction> = vec![jito_tip_ix.clone()];
+                    let can_add: bool = self.is_allowed(&current_tx_ixs, &in_vec).await;
+                    if !can_add {
+                        let last_ix = current_tx_ixs.pop();
+                        if let Some(last_ix) = last_ix {
+                            new_tx_ixs.push(last_ix);
+                        }
+                    }
+                    current_tx_ixs.push(jito_tip_ix);
+                }
+
+                let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
+
+                let tx: VersionedTransaction = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    tx_signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                ata_txs.push(tx);
+                current_tx_ixs = new_tx_ixs;
+            }
         }
 
-        //Return buy instructions
-        let new_ixs = pumpfun_client
-            .buy_ixs(
-                mint_pubkey,
-                &keypair.keypair,
-                balance,
-                None,
-                transactions.len() < MAX_TX_PER_BUNDLE,
-            )
-            .await
-            .unwrap();
-        //let mut maybe_ixs: Vec<Instruction> = Vec::new();
+        if current_tx_ixs.len() > 0 {
+            let jito_tip_ix = self
+                .jito
+                .get_tip_ix(self.dev_keypair.pubkey())
+                .await
+                .unwrap();
+            let in_vec: Vec<Instruction> = vec![jito_tip_ix.clone()];
+            let can_add: bool = self.is_allowed(&current_tx_ixs, &in_vec).await;
 
-        //for ix in &current_tx_ixs {
-        //    maybe_ixs.push(ix.clone());
-        //}
+            //If cannot add, adding tip ix in case it is the last transaction in batch of 5
+            if can_add {
+                //If can add, then we add it and it would be the last tx within the batch anyway. If we cannot add, this tx would be the unique
+                current_tx_ixs.push(jito_tip_ix);
+                let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
 
-        //maybe_ixs.extend(buy_ixs);
+                let tx: VersionedTransaction = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    tx_signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                ata_txs.push(tx);
+            } else {
+                if ata_txs.len() % 5 == 4 {
+                    let tx: VersionedTransaction = build_transaction(
+                        &self.client,
+                        &in_vec,
+                        vec![&self.dev_keypair.insecure_clone()],
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair.insecure_clone(),
+                    );
+                    ata_txs.push(tx);
+                }
 
-        let mut unique_signers: HashSet<Pubkey> = HashSet::new();
+                let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
+
+                let tx: VersionedTransaction = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    tx_signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+
+                ata_txs.push(tx);
+
+                let tx: VersionedTransaction = build_transaction(
+                    &self.client,
+                    &in_vec,
+                    vec![&self.dev_keypair.insecure_clone()],
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair.insecure_clone(),
+                );
+                ata_txs.push(tx);
+            }
+        }
+
+        ata_txs
+    }
+
+    //Separate logic of checking txs size into separate function
+    //When adding ixs, remove actual keypairwithamount from keypairs to treat
+    pub async fn collect_first_bundle_txs(
+        &mut self,
+        dev_amount: u64,
+        token_metadata: Create,
+    ) -> Vec<VersionedTransaction> {
+        let rent = Rent::default();
+        let rent_exempt_min = rent.minimum_balance(0);
+
+        let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + BUFFER_AMOUNT;
+
+        let final_dev_buy_amount = dev_amount - to_sub_for_dev;
+
+        let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
         let mut all_ixs: Vec<Instruction> = Vec::new();
 
-        for ix in &current_tx_ixs {
-            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                unique_signers.insert(acc.pubkey);
+        let mint_ix = self
+            .pumpfun_client
+            .create_instruction(&self.mint_keypair, token_metadata);
+
+        let dev_ix = self
+            .pumpfun_client
+            .buy_ixs(
+                &self.mint_keypair.pubkey(),
+                &self.dev_keypair,
+                final_dev_buy_amount,
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        all_ixs.push(mint_ix);
+        all_ixs.extend(dev_ix);
+
+        let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
+
+        for keypair in self.keypairs_to_treat.iter() {
+            let buy_ixs: Vec<Instruction> = self
+                .pumpfun_client
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, true)
+                .await
+                .unwrap();
+            all_ixs.extend(buy_ixs);
+        }
+
+        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let mut should_break: bool = false;
+
+        for (index, ix) in all_ixs.iter().enumerate() {
+            let to_add = vec![ix.clone()];
+            let possible: bool = self.is_allowed(&current_tx_ixs, &to_add).await;
+            if possible {
+                current_tx_ixs.push(ix.clone());
+            } else {
+                if transactions.len() == 4 {
+                    let tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let to_add = vec![tip_ix.clone()];
+                    let can_add: bool = self.is_allowed(&current_tx_ixs, &to_add).await;
+                    if !can_add {
+                        current_tx_ixs.pop();
+                        current_tx_ixs.push(tip_ix);
+                        self.treated_keypairs = index - 2; //Not only did we not add the current item, we also popped the last one.
+                        should_break = true;
+                    }
+                }
+                let signers = self.get_tx_signers(&current_tx_ixs);
+                let tx = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                transactions.push(tx);
+
+                if !should_break {
+                    current_tx_ixs = Vec::new();
+                    current_tx_ixs.push(ix.clone());
+                }
             }
-            all_ixs.push(ix.clone());
-        }
 
-        let mut tx_signers: Vec<&Keypair> = Vec::new();
-
-        for signer in unique_signers {
-            if let Some(kp) = others_with_amount
-                .iter()
-                .find(|kp| kp.keypair.pubkey() == signer)
-            {
-                tx_signers.push(&kp.keypair);
-            } else if signer == dev_with_amount.keypair.pubkey() {
-                tx_signers.push(&dev_with_amount.keypair);
-            } else if signer == mint_keypair.pubkey() {
-                tx_signers.push(&mint_keypair);
+            if should_break {
+                break;
             }
         }
 
-        for ix in &new_ixs {
-            all_ixs.push(ix.clone());
+        //We did not break, meaning that there are still untreated instructions and we did not reach 5 transactions for the bundle
+        if !should_break {
+            let tip_ix = self
+                .jito
+                .get_tip_ix(self.dev_keypair.pubkey())
+                .await
+                .unwrap();
+            let in_vec = vec![tip_ix.clone()];
+            let can_add = self.is_allowed(&current_tx_ixs, &in_vec).await;
+            if can_add {
+                current_tx_ixs.push(tip_ix);
+                let last_tx_signers = self.get_tx_signers(&current_tx_ixs);
+                let tx = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    last_tx_signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                transactions.push(tx);
+            } else {
+                if transactions.len() == 4 {
+                    current_tx_ixs.pop();
+                    current_tx_ixs.push(tip_ix);
+                    let last_tx_signers = self.get_tx_signers(&current_tx_ixs);
+                    let tx = build_transaction(
+                        &self.client,
+                        &current_tx_ixs,
+                        last_tx_signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    transactions.push(tx);
+                    self.treated_keypairs = self.keypairs_to_treat.len() - 1; // removed last instruction only.
+                } else {
+                    let tx_signers = self.get_tx_signers(&current_tx_ixs);
+                    let before_last_tx = build_transaction(
+                        &self.client,
+                        &current_tx_ixs,
+                        tx_signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    let tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let in_vec = vec![tip_ix];
+                    let signer = vec![&self.dev_keypair];
+                    let last_tx = build_transaction(
+                        &self.client,
+                        &in_vec,
+                        signer,
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    transactions.push(before_last_tx);
+                    transactions.push(last_tx);
+                }
+            }
+        }
+        transactions
+    }
+
+    pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
+        let mut txs: Vec<VersionedTransaction> = Vec::new();
+
+        let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
+        let mut all_ixs: Vec<Instruction> = Vec::new();
+
+        for (index, keypair) in self.keypairs_to_treat.iter().enumerate() {
+            if index >= self.treated_keypairs {
+                let buy_ixs: Vec<Instruction> = self
+                    .pumpfun_client
+                    .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
+                    .await
+                    .unwrap();
+                all_ixs.extend(buy_ixs);
+            }
         }
 
+        let mut current_ixs: Vec<Instruction> = Vec::new();
+
+        for ix in all_ixs {
+            let ixs = vec![ix.clone()];
+            let can = self.is_allowed(&current_ixs, &ixs).await;
+            if can {
+                //Can, so adding latest ix to current ixs
+                current_ixs.push(ix);
+            } else {
+                let mut new_ixs: Vec<Instruction> = Vec::new();
+                //Need to add tip instruction
+                if txs.len() % 5 == 4 {
+                    let tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let in_vec = vec![tip_ix.clone()];
+                    let can_add = self.is_allowed(&current_ixs, &in_vec).await;
+                    if !can_add {
+                        let last_ix = current_ixs.pop();
+                        if let Some(last_ix) = last_ix {
+                            new_ixs.push(last_ix);
+                        }
+                        current_ixs.push(tip_ix);
+                    }
+                }
+                let tx_signers = self.get_tx_signers(&current_ixs);
+                let tx = build_transaction(
+                    &self.client,
+                    &current_ixs,
+                    tx_signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                //Adding new tx, creating empty ixs and adding latest ix
+                txs.push(tx);
+            }
+        }
+
+        if current_ixs.len() > 0 {
+            let tip_ix = self
+                .jito
+                .get_tip_ix(self.dev_keypair.pubkey())
+                .await
+                .unwrap();
+            let in_vec = vec![tip_ix.clone()];
+            let can_add_tip_ix = self.is_allowed(&current_ixs, &in_vec).await;
+            if can_add_tip_ix {
+                current_ixs.push(tip_ix);
+                let signers = self.get_tx_signers(&current_ixs);
+                let last_tx = build_transaction(
+                    &self.client,
+                    &current_ixs,
+                    signers.iter().collect(),
+                    self.address_lookup_table_account.clone(),
+                    &self.dev_keypair,
+                );
+                txs.push(last_tx);
+            } else {
+                if current_ixs.len() % 5 > 3 {
+                    //Add both
+                    let signers = self.get_tx_signers(&current_ixs);
+                    let tx = build_transaction(
+                        &self.client,
+                        &current_ixs,
+                        signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    txs.push(tx);
+                    let tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let in_vec = vec![tip_ix.clone()];
+                    let tx = build_transaction(
+                        &self.client,
+                        &in_vec,
+                        vec![&self.dev_keypair.insecure_clone()],
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    txs.push(tx);
+                } else {
+                    //Add tip ix and add last tx with tip ix as last unique tx
+                    let tip_ix = self
+                        .jito
+                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .await
+                        .unwrap();
+                    let in_vec = vec![tip_ix.clone()];
+                    let tx = build_transaction(
+                        &self.client,
+                        &in_vec,
+                        vec![&self.dev_keypair.insecure_clone()],
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    txs.push(tx);
+                    current_ixs.push(tip_ix);
+                    let signers = self.get_tx_signers(&current_ixs);
+                    let last_tx = build_transaction(
+                        &self.client,
+                        &current_ixs,
+                        signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    txs.push(last_tx);
+                }
+            }
+        }
+
+        txs
+    }
+
+    pub fn get_tx_signers(&self, ixs: &Vec<Instruction>) -> Vec<Keypair> {
         let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
 
-        for ix in &all_ixs {
+        for ix in ixs {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
                 maybe_ix_unique_signers.insert(acc.pubkey);
             }
         }
 
-        let mut maybe_ix_tx_signers: Vec<&Keypair> = Vec::new();
+        let mut all_ixs_signers: Vec<Keypair> = Vec::new();
 
         for signer in maybe_ix_unique_signers {
-            if let Some(kp) = others_with_amount
+            if let Some(kp) = self
+                .keypairs_to_treat
                 .iter()
                 .find(|kp| kp.keypair.pubkey() == signer)
             {
-                maybe_ix_tx_signers.push(&kp.keypair);
-            } else if signer == dev_with_amount.keypair.pubkey() {
-                maybe_ix_tx_signers.push(&dev_with_amount.keypair);
-            } else if signer == mint_keypair.pubkey() {
-                maybe_ix_tx_signers.push(&mint_keypair);
+                all_ixs_signers.push(kp.keypair.insecure_clone());
+            } else if signer == self.dev_keypair.pubkey() {
+                all_ixs_signers.push(self.dev_keypair.insecure_clone());
+            } else if signer == self.mint_keypair.pubkey() {
+                all_ixs_signers.push(self.mint_keypair.insecure_clone());
             }
         }
+        all_ixs_signers
+    }
 
-        let maybe_tx = build_transaction(
-            &client,
+    pub async fn is_allowed(&self, ixs: &Vec<Instruction>, to_add: &Vec<Instruction>) -> bool {
+        let mut all_ixs: Vec<Instruction> = Vec::new();
+        for ix in ixs {
+            all_ixs.push(ix.clone());
+        }
+        for ix in to_add {
+            all_ixs.push(ix.clone());
+        }
+
+        let all_ixs_signers: Vec<Keypair> = self.get_tx_signers(&all_ixs);
+
+        let tx = build_transaction(
+            &self.client,
             &all_ixs,
-            maybe_ix_tx_signers,
-            address_lookup_table_account.clone(),
-            &admin_keypair,
+            all_ixs_signers.iter().collect(),
+            self.address_lookup_table_account.clone(),
+            &self.admin_keypair,
         );
 
-        let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
-
-        //Add new ixs to current tx instructions if size below 1232, else create new tx and reset current tx instructions, and add new ixs to it
-        if size > 1232 {
-            let new_tx = build_transaction(
-                &client,
-                &current_tx_ixs,
-                tx_signers,
-                address_lookup_table_account.clone(),
-                &admin_keypair,
-            );
-            transactions.push(new_tx);
-            println!("Added new tx to transactions, with size {}", size);
-            current_tx_ixs = vec![];
-            let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000_000);
-            current_tx_ixs.push(priority_fee_ix);
-            let new_ixs = pumpfun_client
-                .buy_ixs(
-                    mint_pubkey,
-                    &keypair.keypair,
-                    balance,
-                    None,
-                    transactions.len() < MAX_TX_PER_BUNDLE,
-                )
-                .await
-                .unwrap();
-            current_tx_ixs.extend(new_ixs);
-            if !added_tip_ix && transactions.len() % 5 == 4 {
-                println!("Adding tip ix to current tx instructions");
-                let tip_ix = jito
-                    .get_tip_ix(dev_with_amount.keypair.pubkey())
-                    .await
-                    .unwrap();
-                current_tx_ixs.push(tip_ix);
-                added_tip_ix = true;
-            }
-            if transactions.len() % 5 == 0 {
-                added_tip_ix = false;
-            }
-        } else {
-            println!(
-                "Adding new ixs to current tx instructions, current size: {}",
-                size
-            );
-            current_tx_ixs.extend(new_ixs);
-        }
-        println!("With {} instructions", current_tx_ixs.len());
-        println!("Transaction size: {:?}", size);
+        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+        size <= MAX_TX_SIZE
     }
-
-    if current_tx_ixs.len() > 0 {
-        let mut maybe_last_ixs_with_tip: Vec<Instruction> = Vec::new();
-
-        for ix in &current_tx_ixs {
-            maybe_last_ixs_with_tip.push(ix.clone());
-        }
-
-        //If the current transactions are below 5, meaning this tx will be the last one in the batch, add a tip instruction to it
-        if !added_tip_ix {
-            println!("Adding tip ix to current tx instructions");
-            let tip_ix = jito
-                .get_tip_ix(dev_with_amount.keypair.pubkey())
-                .await
-                .unwrap();
-
-            maybe_last_ixs_with_tip.push(tip_ix);
-        }
-
-        let mut unique_signers: HashSet<Pubkey> = HashSet::new();
-
-        for ix in &current_tx_ixs {
-            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                unique_signers.insert(acc.pubkey);
-            }
-        }
-
-        let mut tx_signers: Vec<&Keypair> = Vec::new();
-        for signer in unique_signers {
-            if let Some(kp) = others_with_amount
-                .iter()
-                .find(|kp| kp.keypair.pubkey() == signer)
-            {
-                tx_signers.push(&kp.keypair);
-            } else if signer == dev_with_amount.keypair.pubkey() {
-                tx_signers.push(&dev_with_amount.keypair);
-            } else if signer == mint_keypair.pubkey() {
-                tx_signers.push(&mint_keypair);
-            }
-        }
-
-        //Checking if last transaction is too big, if so, split it into two transactions with a tip instruction in between
-
-        let mut maybe_last_tx_signers: Vec<&Keypair> = Vec::new();
-
-        maybe_last_tx_signers.extend(tx_signers.clone());
-
-        //Means that maybe last tx has different signers than normal, and we add the dev keypair
-        if !added_tip_ix {
-            //Might be just 1 tx, which always contains dev keypair, so only add when necessary 
-            let has_dev =  tx_signers.contains(&&dev_with_amount.keypair);
-            if !has_dev{
-                maybe_last_tx_signers.push(&dev_with_amount.keypair);
-            }
-        }
-
-        let maybe_last_tx = build_transaction(
-            &client,
-            &maybe_last_ixs_with_tip,
-            maybe_last_tx_signers,
-            address_lookup_table_account.clone(),
-            &admin_keypair,
-        );
-
-        let tx_size: usize = bincode::serialized_size(&maybe_last_tx).unwrap() as usize;
-
-        if tx_size > 1232 {
-            println!("Last transaction is too big, splitting it into two transactions with a tip instruction in between");
-            let before_last_tx = build_transaction(
-                &client,
-                &current_tx_ixs,
-                tx_signers.clone(),
-                address_lookup_table_account.clone(),
-                &admin_keypair,
-            );
-
-            let tip_ix = jito
-                .get_tip_ix(dev_with_amount.keypair.pubkey())
-                .await
-                .unwrap();
-
-            let ixs: Vec<Instruction> = vec![tip_ix];
-            let last_signer: Vec<&Keypair> = vec![&dev_with_amount.keypair];
-            let tip_tx = build_transaction(
-                &client,
-                &ixs,
-                last_signer,
-                address_lookup_table_account.clone(),
-                &admin_keypair,
-            );
-            //If we have 4 transactions, meaning this tx will be the last one in the batch, add a tip instruction to it
-            if transactions.len() % 5 == 4 {
-                //Case where no room for full TX so we only add tip tx to the pre final batch and have one last tx
-                transactions.push(tip_tx);
-                transactions.push(maybe_last_tx);
-            } else {
-                //Case where we have room for split txs within same last batch
-                transactions.push(before_last_tx);
-                transactions.push(tip_tx);
-            }
-        } else {
-            //Case where we added a tip instruction to the last transaction
-            println!("Last transaction is not too big, adding it to transactions");
-            transactions.push(maybe_last_tx);
-        }
-    }
-
-    test_transactions(&client, &transactions).await;
-    transactions
 }

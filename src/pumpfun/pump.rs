@@ -10,20 +10,20 @@ use anchor_client::{
         system_instruction::transfer,
     },
 };
-use pumpfun_cpi::instruction::{Create, Buy, Sell};
+use pumpfun_cpi::instruction::{Buy, Create, Sell};
 
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
 
+use crate::config::RPC_URL;
+use crate::params::PoolInformation;
+use crate::pumpfun::bonding_curve::BondingCurveAccount;
 use borsh::BorshDeserialize;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};
-use crate::config::RPC_URL;
-use crate::params::PoolInformation;
-use crate::pumpfun::bonding_curve::BondingCurveAccount;
 
 /// Configuration for priority fee compute unit parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +70,14 @@ impl PumpFun {
         }
     }
 
+    pub async fn is_token_live(&self, mint: &Pubkey) -> bool {
+        let bonding_curve_account = self.get_bonding_curve_account(mint).await;
+        match bonding_curve_account {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
     //Gets or creates an associated token account for a keypair TODO: Use this serialized to all accounts and pass it to the lut
     pub fn get_ata(&self, pubkey: &Pubkey, mint: &Pubkey) -> Pubkey {
         let ata: Pubkey = get_associated_token_address(&pubkey, mint);
@@ -98,11 +106,7 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns the transaction signature if successful, or a ClientError if the operation fails
-    pub fn create_instruction(
-        &self,
-        mint: &Keypair,
-        args: Create,
-    ) -> Instruction {
+    pub fn create_instruction(&self, mint: &Keypair, args: Create) -> Instruction {
         let bonding_curve: Pubkey = Self::get_bonding_curve_pda(&mint.pubkey()).unwrap();
         Instruction::new_with_bytes(
             pumpfun::constants::accounts::PUMPFUN,
@@ -155,16 +159,19 @@ impl PumpFun {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await.unwrap();
 
-        let buy_amount_with_slippage = Self::calculate_with_slippage(
-            amount_sol,
-            slippage_basis_points.unwrap_or(500),
-        );
+        let buy_amount_with_slippage =
+            Self::calculate_with_slippage(amount_sol, slippage_basis_points.unwrap_or(500));
 
         let buy_amount = match with_stimulate {
-            true => self.bonding_curve.get_buy_price(buy_amount_with_slippage).unwrap(),
+            true => self
+                .bonding_curve
+                .get_buy_price(buy_amount_with_slippage)
+                .unwrap(),
             false => {
                 let bonding_curve_account = self.get_bonding_curve_account(mint).await?;
-                bonding_curve_account.get_buy_price(buy_amount_with_slippage).unwrap()
+                bonding_curve_account
+                    .get_buy_price(buy_amount_with_slippage)
+                    .unwrap()
             }
         };
 
@@ -259,10 +266,8 @@ impl PumpFun {
             .get_sell_price(amount, global_account.fee_basis_points)
             .map_err(pumpfun::error::ClientError::BondingCurveError)?;
 
-        let min_sol_output = Self::calculate_with_slippage(
-            min_sol_output,
-            slippage_basis_points.unwrap_or(500),
-        );
+        let min_sol_output =
+            Self::calculate_with_slippage(min_sol_output, slippage_basis_points.unwrap_or(500));
 
         let mut instructions: Vec<Instruction> = Vec::new();
 
@@ -288,13 +293,15 @@ impl PumpFun {
                 AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
-                AccountMeta::new_readonly(pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(
+                    pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM,
+                    false,
+                ),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
             ],
         );
-
 
         let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
 
@@ -328,7 +335,7 @@ impl PumpFun {
             .map_err(pumpfun::error::ClientError::BondingCurveError)?;
 
         println!("Min sol: {:?}", min_sol);
-        
+
         // 500 basis points = 5% slippage
         // Setting slippage to 10000 (100%) means you'll accept any price above min_sol * 0,
         // which could result in getting much less SOL than expected
@@ -357,7 +364,10 @@ impl PumpFun {
                 AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
-                AccountMeta::new_readonly(pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM, false),
+                AccountMeta::new_readonly(
+                    pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM,
+                    false,
+                ),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
@@ -376,7 +386,7 @@ impl PumpFun {
         Ok(instructions)
     }
 
-      /// Gets the Program Derived Address (PDA) for the mint authority
+    /// Gets the Program Derived Address (PDA) for the mint authority
     ///
     /// # Returns
     ///
@@ -503,4 +513,3 @@ impl PumpFun {
         amount - (amount * basis_points) / 10000
     }
 }
-
