@@ -292,12 +292,15 @@ impl BundleTransactions {
         }
 
         let mut current_ixs: Vec<Instruction> = Vec::new();
-
+        print!("All keypairs:");
+        let _ = self.keypairs_to_treat.iter().map(|keypair| print!(" {:?}", keypair.keypair.pubkey().to_string()));
+        print!("Keypair to reach: {:?}", self.treated_keypairs.to_string());
         for ( pubkey, ix) in all_ixs {
             if !reached {
                 if pubkey == self.treated_keypairs {
                     reached = true; 
                 }else{
+                    print!("Continuing for pubkey: {:?}", pubkey.to_string());
                     continue;
                 }
             }
