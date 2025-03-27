@@ -155,7 +155,7 @@ impl BundleTransactions {
             if possible {
                 current_tx_ixs.push(ix.clone());
             } else {
-                if transactions.len() == 4 {
+                if transactions.len() == 1 {
                     let tip_ix = self
                         .jito
                         .get_tip_ix(self.dev_keypair.pubkey())
