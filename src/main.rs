@@ -11,6 +11,7 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
+use solana::lut;
 use solana::refund::refund_keypairs;
 use solana::utils::load_keypair;
 use solana_sdk::signer::Signer;
@@ -53,7 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler_manager = Arc::new(Mutex::new(HandlerManager::new(admin_keypair)));
     //Storing LUT to access it across handlers 
     let pubkey_to_lut:  Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
-
+    let lut_pubkey: Pubkey = Pubkey::from_str("5rk5JenKdEQmjBAmMHisrtPmRu34t8Ntq5PxxqJdTmxy").unwrap();
+    pubkey_to_lut.lock().await.insert("PcNYpD72ef3jx2xgnVpm36tjSgzaYzMafnNZSKxMLPp".to_string(), lut_pubkey);
     //setup app
     let app = Router::new()
         .route("/", get(health_check))
