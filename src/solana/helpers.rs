@@ -95,9 +95,15 @@ pub async fn sell_all_txs(
             false => {
                 let pump_ixs = pumpfun_client
                     .sell_all_ix(&mint_pubkey, &keypair)
-                    .await
-                    .unwrap();
-                pump_ixs
+                    .await;
+                match pump_ixs {
+                    Ok(ixs) => ixs, 
+                    Err(error) => {
+                        print!("Error finding instructions {:?}", error.to_string());
+                        let empty: Vec<Instruction> = Vec::new();
+                        empty
+                    }
+                }
             }
         };
         //let mut maybe_ixs: Vec<Instruction> = Vec::new();

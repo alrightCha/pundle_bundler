@@ -39,7 +39,7 @@ pub struct BundleTransactions {
     jito: JitoBundle,
     address_lookup_table_account: AddressLookupTableAccount,
     keypairs_to_treat: Vec<KeypairWithAmount>,
-    treated_keypairs: usize,
+    treated_keypairs: Pubkey,
 }
 
 const MAX_TX_SIZE: usize = 1232;
@@ -79,7 +79,7 @@ impl BundleTransactions {
         };
 
         let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
-        let treated_keypairs: usize = 0;
+        let treated_keypairs: Pubkey = Pubkey::default();
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
 
         Self {
@@ -112,7 +112,7 @@ impl BundleTransactions {
 
         let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-        let mut all_ixs: Vec<Instruction> = Vec::new();
+        let mut all_ixs: Vec<(Pubkey, Instruction)> = Vec::new();
 
         let mint_ix = self
             .pumpfun_client
@@ -130,10 +130,12 @@ impl BundleTransactions {
             .await
             .unwrap();
 
-        all_ixs.push(mint_ix);
-        all_ixs.extend(dev_ix);
+        all_ixs.push((self.mint_keypair.pubkey(), mint_ix));
+        for ix in dev_ix {
+            all_ixs.push((self.dev_keypair.pubkey(), ix));
+        }
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
-        all_ixs.push(priority_fee_ix);
+        all_ixs.push((self.dev_keypair.pubkey(), priority_fee_ix));
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
 
@@ -143,13 +145,15 @@ impl BundleTransactions {
                 .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, true)
                 .await
                 .unwrap();
-            all_ixs.extend(buy_ixs);
+            for ix in buy_ixs {
+                all_ixs.push((keypair.keypair.pubkey(), ix));
+            }
         }
 
         let mut current_tx_ixs: Vec<Instruction> = Vec::new();
         let mut should_break: bool = false;
 
-        for (index, ix) in all_ixs.iter().enumerate() {
+        for (index, (_, ix)) in all_ixs.iter().enumerate() {
             let to_add = vec![ix.clone()];
             let possible: bool = self.is_allowed(&current_tx_ixs, &to_add).await;
             if possible {
@@ -167,7 +171,7 @@ impl BundleTransactions {
                         current_tx_ixs.pop();
                         current_tx_ixs.push(tip_ix);
                         tip_ix_count += 1;
-                        self.treated_keypairs = index - 2; //Not only did we not add the current item, we also popped the last one.
+                        self.treated_keypairs = all_ixs[index - 2].0; //Not only did we not add the current item, we also popped the last one.
                         should_break = true;
                     }
                 }
@@ -227,7 +231,8 @@ impl BundleTransactions {
                     );
                     transactions.push(tx);
                     tip_ix_count += 1;
-                    self.treated_keypairs = self.keypairs_to_treat.len() - 1; // removed last instruction only.
+                    self.treated_keypairs = all_ixs[self.keypairs_to_treat.len() - 1].0;
+                // removed last instruction only.
                 } else {
                     let tx_signers = self.get_tx_signers(&current_tx_ixs);
                     let before_last_tx = build_transaction(
@@ -268,11 +273,12 @@ impl BundleTransactions {
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
         let mut tip_ix_count = 0;
-
+        let mut reached: bool = false;
         let mut txs: Vec<VersionedTransaction> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
-        let mut all_ixs: Vec<Instruction> = Vec::new();
+
+        let mut all_ixs: Vec<(Pubkey, Instruction)> = Vec::new();
 
         for keypair in self.keypairs_to_treat.iter() {
             let buy_ixs: Vec<Instruction> = self
@@ -280,14 +286,20 @@ impl BundleTransactions {
                 .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
                 .await
                 .unwrap();
-            all_ixs.extend(buy_ixs);
+            for ix in buy_ixs {
+                all_ixs.push((keypair.keypair.pubkey(), ix));
+            }
         }
 
         let mut current_ixs: Vec<Instruction> = Vec::new();
 
-        for (index, ix) in all_ixs.iter().enumerate() {
-            if index < self.treated_keypairs {
-                continue;
+        for ( pubkey, ix) in all_ixs {
+            if !reached {
+                if pubkey == self.treated_keypairs {
+                    reached = true; 
+                }else{
+                    continue;
+                }
             }
             let ixs = vec![ix.clone()];
             let can = self.is_allowed(&current_ixs, &ixs).await;
