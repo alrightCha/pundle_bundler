@@ -31,6 +31,7 @@ pub async fn sell_all_txs(
             .map(|kp| kp.pubkey())
             .collect::<Vec<Pubkey>>()
     );
+
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
     let raw_account = client.get_account(&lut_pubkey).unwrap();
@@ -99,7 +100,8 @@ pub async fn sell_all_txs(
                 match pump_ixs {
                     Ok(ixs) => ixs, 
                     Err(error) => {
-                        print!("Error finding instructions {:?}", error.to_string());
+                        println!("Error occurred: {:?}", error.to_string());
+                        print!("Error finding instructions for keypair {:?}", keypair.pubkey().to_string());
                         let empty: Vec<Instruction> = Vec::new();
                         empty
                     }
