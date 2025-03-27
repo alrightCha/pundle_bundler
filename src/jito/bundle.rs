@@ -177,7 +177,7 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
-    
+
     let tx = build_transaction(
         &client,
         &instructions,
@@ -274,20 +274,7 @@ pub async fn process_bundle(
         lut_pubkey,
         keypairs_with_amount,
     );
-
-    //Submitting ata bundles
-    let create_ata_txs: Vec<VersionedTransaction> = txs_builder.create_atas().await;
-    print!("Create ata txs length: {:?}", create_ata_txs.len());
-    let ata_chunks: std::slice::Chunks<'_, VersionedTransaction> = create_ata_txs.chunks(5);
-
-    for chunk in ata_chunks {
-        // Only send first chunk for testing
-        let _ = jito
-            .submit_bundle(chunk.to_vec(), mint.pubkey(), Some(&pumpfun_client))
-            .await
-            .unwrap();
-    }
-
+    
     //Submitting first bundle
     let first_bundle: Vec<VersionedTransaction> = txs_builder
         .collect_first_bundle_txs(dev_keypair_with_amount.amount, token_metadata)
