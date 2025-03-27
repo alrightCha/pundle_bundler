@@ -97,26 +97,35 @@ impl BundleTransactions {
 
     pub async fn create_atas(&mut self) -> Vec<VersionedTransaction> {
         let mut ata_txs: Vec<VersionedTransaction> = Vec::new();
-        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let mut all_ixs: Vec<Instruction> = Vec::new();
         let dev_ata = self.pumpfun_client.create_ata(
             &self.dev_keypair.pubkey(),
             &self.dev_keypair.pubkey(),
             &self.mint_keypair.pubkey(),
         );
-        current_tx_ixs.push(dev_ata);
+        all_ixs.push(dev_ata);
+
         for keypair in self.keypairs_to_treat.iter() {
             let ata_ix: Instruction = self.pumpfun_client.create_ata(
                 &self.dev_keypair.pubkey(),
                 &keypair.keypair.pubkey(),
                 &self.mint_keypair.pubkey(),
             );
-            let in_vec: Vec<Instruction> = vec![ata_ix.clone()];
+            all_ixs.push(ata_ix);
+        }
+
+        print!("ATA INSTRUCTIONS LENGTH: {:?}", all_ixs.len());
+
+        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let mut tip_ix_count = 0; 
+
+        for ix in all_ixs {
+            let in_vec = vec![ix.clone()];
             let can_add = self.is_allowed(&current_tx_ixs, &in_vec).await;
             if can_add {
-                current_tx_ixs.push(ata_ix);
+                current_tx_ixs.push(ix);
             } else {
-                let mut new_tx_ixs: Vec<Instruction> = Vec::new();
-                if ata_txs.len() == 4 {
+                if ata_txs.len() % 5 == 4 {
                     let jito_tip_ix = self
                         .jito
                         .get_tip_ix(self.dev_keypair.pubkey())
@@ -126,24 +135,35 @@ impl BundleTransactions {
                     let can_add: bool = self.is_allowed(&current_tx_ixs, &in_vec).await;
                     if !can_add {
                         let last_ix = current_tx_ixs.pop();
+                        current_tx_ixs.push(jito_tip_ix);
+                        tip_ix_count += 1; 
+                        let tx_signers = self.get_tx_signers(&current_tx_ixs);
+                        let tx: VersionedTransaction = build_transaction(
+                            &self.client,
+                            &current_tx_ixs,
+                            tx_signers.iter().collect(),
+                            self.address_lookup_table_account.clone(),
+                            &self.dev_keypair,
+                        );
+                        ata_txs.push(tx);
+                        current_tx_ixs = Vec::new();
                         if let Some(last_ix) = last_ix {
-                            new_tx_ixs.push(last_ix);
+                            current_tx_ixs.push(last_ix);
                         }
                     }
-                    current_tx_ixs.push(jito_tip_ix);
+                } else {
+                    let tx_signers = self.get_tx_signers(&current_tx_ixs);
+                    let tx: VersionedTransaction = build_transaction(
+                        &self.client,
+                        &current_tx_ixs,
+                        tx_signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    ata_txs.push(tx);
+                    current_tx_ixs = Vec::new();
+                    current_tx_ixs.push(ix);
                 }
-
-                let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
-
-                let tx: VersionedTransaction = build_transaction(
-                    &self.client,
-                    &current_tx_ixs,
-                    tx_signers.iter().collect(),
-                    self.address_lookup_table_account.clone(),
-                    &self.dev_keypair,
-                );
-                ata_txs.push(tx);
-                current_tx_ixs = new_tx_ixs;
             }
         }
 
@@ -160,6 +180,7 @@ impl BundleTransactions {
             if can_add {
                 //If can add, then we add it and it would be the last tx within the batch anyway. If we cannot add, this tx would be the unique
                 current_tx_ixs.push(jito_tip_ix);
+                tip_ix_count += 1; 
                 let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
 
                 let tx: VersionedTransaction = build_transaction(
@@ -180,6 +201,7 @@ impl BundleTransactions {
                         &self.dev_keypair.insecure_clone(),
                     );
                     ata_txs.push(tx);
+                    tip_ix_count += 1; 
                 }
 
                 let tx_signers: Vec<Keypair> = self.get_tx_signers(&current_tx_ixs);
@@ -202,9 +224,13 @@ impl BundleTransactions {
                     &self.dev_keypair.insecure_clone(),
                 );
                 ata_txs.push(tx);
+                tip_ix_count += 1; 
             }
         }
 
+        print!("Sending {:?} with {:?} tip instructions", ata_txs.len(), tip_ix_count);
+        print!("Testing ATA TRANSACTIONS"); 
+        test_transactions(&self.client, &ata_txs).await;
         ata_txs
     }
 
@@ -215,10 +241,11 @@ impl BundleTransactions {
         dev_amount: u64,
         token_metadata: Create,
     ) -> Vec<VersionedTransaction> {
+        let mut tip_ix_count = 0; 
         let rent = Rent::default();
         let rent_exempt_min = rent.minimum_balance(0);
 
-        let for_many: u64 = BUFFER_AMOUNT * std::cmp::max(self.keypairs_to_treat.len(), 10) as u64; 
+        let for_many: u64 = BUFFER_AMOUNT * std::cmp::max(self.keypairs_to_treat.len(), 10) as u64;
         let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + for_many;
 
         let final_dev_buy_amount = dev_amount - to_sub_for_dev;
@@ -279,6 +306,7 @@ impl BundleTransactions {
                     if !can_add {
                         current_tx_ixs.pop();
                         current_tx_ixs.push(tip_ix);
+                        tip_ix_count += 1; 
                         self.treated_keypairs = index - 2; //Not only did we not add the current item, we also popped the last one.
                         should_break = true;
                     }
@@ -324,6 +352,7 @@ impl BundleTransactions {
                     &self.dev_keypair,
                 );
                 transactions.push(tx);
+                tip_ix_count += 1; 
             } else {
                 if transactions.len() == 4 {
                     current_tx_ixs.pop();
@@ -337,6 +366,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     transactions.push(tx);
+                    tip_ix_count += 1; 
                     self.treated_keypairs = self.keypairs_to_treat.len() - 1; // removed last instruction only.
                 } else {
                     let tx_signers = self.get_tx_signers(&current_tx_ixs);
@@ -363,13 +393,18 @@ impl BundleTransactions {
                     );
                     transactions.push(before_last_tx);
                     transactions.push(last_tx);
+                    tip_ix_count += 1; 
                 }
             }
         }
+        print!("Adding {:?} transactions in the first bundle with {:?} tip instructions", transactions.len(), tip_ix_count);
+        test_transactions(&self.client, &transactions).await; 
         transactions
     }
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
+        let mut tip_ix_count =  0; 
+
         let mut txs: Vec<VersionedTransaction> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
@@ -411,6 +446,7 @@ impl BundleTransactions {
                             new_ixs.push(last_ix);
                         }
                         current_ixs.push(tip_ix);
+                        tip_ix_count += 1; 
                     }
                 }
                 let tx_signers = self.get_tx_signers(&current_ixs);
@@ -436,6 +472,7 @@ impl BundleTransactions {
             let can_add_tip_ix = self.is_allowed(&current_ixs, &in_vec).await;
             if can_add_tip_ix {
                 current_ixs.push(tip_ix);
+                tip_ix_count += 1; 
                 let signers = self.get_tx_signers(&current_ixs);
                 let last_tx = build_transaction(
                     &self.client,
@@ -446,7 +483,7 @@ impl BundleTransactions {
                 );
                 txs.push(last_tx);
             } else {
-                if current_ixs.len() % 5 > 3 {
+                if current_ixs.len() % 5 < 4 {
                     //Add both
                     let signers = self.get_tx_signers(&current_ixs);
                     let tx = build_transaction(
@@ -471,6 +508,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(tx);
+                    tip_ix_count += 1; 
                 } else {
                     //Add tip ix and add last tx with tip ix as last unique tx
                     let tip_ix = self
@@ -487,6 +525,7 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(tx);
+                    tip_ix_count += 1; 
                     current_ixs.push(tip_ix);
                     let signers = self.get_tx_signers(&current_ixs);
                     let last_tx = build_transaction(
@@ -497,10 +536,12 @@ impl BundleTransactions {
                         &self.dev_keypair,
                     );
                     txs.push(last_tx);
+                    tip_ix_count += 1; 
                 }
             }
         }
-
+        print!("Sending {:?} transactions as late bundles with {:?} tip instructions", txs.len(), tip_ix_count);
+        test_transactions(&self.client, &txs).await;
         txs
     }
 
