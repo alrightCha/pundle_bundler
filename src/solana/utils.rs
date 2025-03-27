@@ -183,7 +183,7 @@ pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedT
                 }
             }
             Err(e) => {
-                eprintln!("🚨 Transaction simulation error: {:?}", e);
+                eprintln!("🚨 Transaction simulation error: {:?}", e.to_string());
             }
         }
     }
