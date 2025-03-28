@@ -63,7 +63,7 @@ impl BundleTransactions {
 
         let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
-        let dev: Keypair = admin_keypair.insecure_clone();
+        let dev: Keypair = dev_keypair.insecure_clone();
         let payer: Arc<Keypair> = Arc::new(dev);
 
         let pumpfun_client = PumpFun::new(payer);
@@ -276,6 +276,10 @@ impl BundleTransactions {
     }
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
+        let new_dev = self.admin_keypair.insecure_clone();
+        let new_payer: Arc<Keypair> = Arc::new(new_dev);
+        let new_pump = PumpFun::new(new_payer);
+        self.pumpfun_client = new_pump;
         let mut tip_ix_count = 0;
         let mut reached: bool = false;
         let mut txs: Vec<VersionedTransaction> = Vec::new();
@@ -461,6 +465,8 @@ impl BundleTransactions {
                 all_ixs_signers.push(self.dev_keypair.insecure_clone());
             } else if signer == self.mint_keypair.pubkey() {
                 all_ixs_signers.push(self.mint_keypair.insecure_clone());
+            }else if signer == self.admin_keypair.pubkey() {
+                all_ixs_signers.push(self.admin_keypair.insecure_clone());
             }
         }
         all_ixs_signers
