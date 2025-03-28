@@ -78,7 +78,7 @@ pub async fn recursive_pay(
             let file_path = entry.path();
 
             let keypair = load_keypair(file_path.to_str().unwrap()).unwrap();
-
+            signers.push(keypair.insecure_clone());
             //skipping if the keypair is the mint
             if mint == keypair.pubkey().to_string() {
                 continue;
@@ -128,7 +128,6 @@ pub async fn recursive_pay(
 
             //Adding the instruction and signer to the vectors
             ixs.push(ix);
-            signers.push(keypair);
         }
     }
 
