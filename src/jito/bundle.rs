@@ -280,16 +280,14 @@ pub async fn process_bundle(
         .collect_first_bundle_txs(dev_keypair_with_amount.amount, token_metadata)
         .await;
 
-    let late_txs = txs_builder.collect_rest_txs().await;
-
-    if late_txs.len() > 0 {
+    if txs_builder.has_delayed_bundle() {
         let mint_pubkey = mint.pubkey();
         let admin_kp = load_keypair(&admin_keypair_path).unwrap();
         let payer: Arc<Keypair> = Arc::new(admin_kp);
         let pumpfun_client = PumpFun::new(payer);
         let rpc = RpcClient::new(RPC_URL);
         let jito = JitoBundle::new(rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
-        
+
         tokio::spawn(async move {
             //Check every 500ms if token is live, then build and submit rest of txs
             let mut is_live: bool = false;
@@ -308,6 +306,7 @@ pub async fn process_bundle(
                     sleep(Duration::from_millis(500));
                 }
             }
+            let late_txs = txs_builder.collect_rest_txs().await;
             let late_txs_chunks: Vec<Vec<VersionedTransaction>> = late_txs.chunks(5).map(|c| c.to_vec()).collect();
 
             print!("We received {:?} late bundles", late_txs_chunks.len());

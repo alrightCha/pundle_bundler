@@ -273,6 +273,10 @@ impl BundleTransactions {
         transactions
     }
 
+    pub fn has_delayed_bundle(&self) -> bool {
+        self.treated_keypairs != Pubkey::default()
+    }
+    
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
         let mut tip_ix_count = 0;
         let mut reached: bool = false;
