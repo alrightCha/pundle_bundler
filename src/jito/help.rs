@@ -1,10 +1,9 @@
 use super::jito::JitoBundle;
-use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT, MAX_TX_PER_BUNDLE};
+use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::{build_transaction, load_keypair, test_transactions};
-use axum::http::Version;
 use dotenv::dotenv;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
@@ -20,7 +19,6 @@ use solana_sdk::{
 };
 use std::collections::HashSet;
 use std::env;
-use std::slice::Chunks;
 use std::sync::Arc;
 /*
 keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -320,7 +318,7 @@ impl BundleTransactions {
                 if txs.len() % 5 < 4 {
                     let tip_ix = self
                         .jito
-                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .get_tip_ix(self.admin_keypair.pubkey())
                         .await
                         .unwrap();
                     let in_vec = vec![tip_ix.clone()];
@@ -340,7 +338,7 @@ impl BundleTransactions {
                     &current_ixs,
                     tx_signers.iter().collect(),
                     self.address_lookup_table_account.clone(),
-                    &self.dev_keypair,
+                    &self.admin_keypair,
                 );
                 //Adding new tx, creating empty ixs and adding latest ix
                 txs.push(tx);
@@ -350,7 +348,7 @@ impl BundleTransactions {
         if current_ixs.len() > 0 {
             let tip_ix = self
                 .jito
-                .get_tip_ix(self.dev_keypair.pubkey())
+                .get_tip_ix(self.admin_keypair.pubkey())
                 .await
                 .unwrap();
             let in_vec = vec![tip_ix.clone()];
@@ -364,7 +362,7 @@ impl BundleTransactions {
                     &current_ixs,
                     signers.iter().collect(),
                     self.address_lookup_table_account.clone(),
-                    &self.dev_keypair,
+                    &self.admin_keypair,
                 );
                 txs.push(last_tx);
             } else {
@@ -376,21 +374,21 @@ impl BundleTransactions {
                         &current_ixs,
                         signers.iter().collect(),
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     txs.push(tx);
                     let tip_ix = self
                         .jito
-                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .get_tip_ix(self.admin_keypair.pubkey())
                         .await
                         .unwrap();
                     let in_vec = vec![tip_ix.clone()];
                     let tx = build_transaction(
                         &self.client,
                         &in_vec,
-                        vec![&self.dev_keypair.insecure_clone()],
+                        vec![&self.admin_keypair],
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     txs.push(tx);
                     tip_ix_count += 1;
@@ -398,16 +396,16 @@ impl BundleTransactions {
                     //Add tip ix and add last tx with tip ix as last unique tx
                     let tip_ix = self
                         .jito
-                        .get_tip_ix(self.dev_keypair.pubkey())
+                        .get_tip_ix(self.admin_keypair.pubkey())
                         .await
                         .unwrap();
                     let in_vec = vec![tip_ix.clone()];
                     let tx = build_transaction(
                         &self.client,
                         &in_vec,
-                        vec![&self.dev_keypair.insecure_clone()],
+                        vec![&self.admin_keypair.insecure_clone()],
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     txs.push(tx);
                     tip_ix_count += 1;
@@ -417,15 +415,15 @@ impl BundleTransactions {
                         &current_ixs,
                         signers.iter().collect(),
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     txs.push(last_tx);
                     let last_tx = build_transaction(
                         &self.client,
                         &in_vec,
-                        vec![&self.dev_keypair.insecure_clone()],
+                        vec![&self.admin_keypair.insecure_clone()],
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     txs.push(last_tx);
                     tip_ix_count += 1;
