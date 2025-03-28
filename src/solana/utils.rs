@@ -177,7 +177,7 @@ pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedT
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
                 if let Some(err) = sim_result.value.err {
-                    eprintln!("❌ Transaction failed simulation: {:?}", err);
+                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
                 } else {
                     println!("✅ Transaction simulation successful");
                 }
