@@ -276,7 +276,7 @@ impl BundleTransactions {
     pub fn has_delayed_bundle(&self) -> bool {
         self.treated_keypairs != Pubkey::default()
     }
-    
+
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
         let mut tip_ix_count = 0;
         let mut reached: bool = false;
@@ -317,7 +317,7 @@ impl BundleTransactions {
             } else {
                 let mut new_ixs: Vec<Instruction> = Vec::new();
                 //Need to add tip instruction
-                if txs.len() % 5 == 4 {
+                if txs.len() % 5 < 4 {
                     let tip_ix = self
                         .jito
                         .get_tip_ix(self.dev_keypair.pubkey())
@@ -411,12 +411,19 @@ impl BundleTransactions {
                     );
                     txs.push(tx);
                     tip_ix_count += 1;
-                    current_ixs.push(tip_ix);
                     let signers = self.get_tx_signers(&current_ixs);
                     let last_tx = build_transaction(
                         &self.client,
                         &current_ixs,
                         signers.iter().collect(),
+                        self.address_lookup_table_account.clone(),
+                        &self.dev_keypair,
+                    );
+                    txs.push(last_tx);
+                    let last_tx = build_transaction(
+                        &self.client,
+                        &in_vec,
+                        vec![&self.dev_keypair.insecure_clone()],
                         self.address_lookup_table_account.clone(),
                         &self.dev_keypair,
                     );
