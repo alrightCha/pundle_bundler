@@ -134,8 +134,6 @@ impl BundleTransactions {
         for ix in dev_ix {
             all_ixs.push((self.dev_keypair.pubkey(), ix));
         }
-        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
-        all_ixs.push((self.dev_keypair.pubkey(), priority_fee_ix));
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
 
@@ -151,6 +149,8 @@ impl BundleTransactions {
         }
 
         let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+        current_tx_ixs.push(priority_fee_ix);
         let mut should_break: bool = false;
 
         for (index, (_, ix)) in all_ixs.iter().enumerate() {
@@ -187,6 +187,8 @@ impl BundleTransactions {
 
                 if !should_break {
                     current_tx_ixs = Vec::new();
+                    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+                    current_tx_ixs.push(priority_fee_ix);
                     current_tx_ixs.push(ix.clone());
                 }
             }
@@ -262,7 +264,7 @@ impl BundleTransactions {
                 }
             }
         }
-        print!(
+        println!(
             "Adding {:?} transactions in the first bundle with {:?} tip instructions",
             transactions.len(),
             tip_ix_count
@@ -283,17 +285,16 @@ impl BundleTransactions {
         for keypair in self.keypairs_to_treat.iter() {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, Some(1000), false)
                 .await
                 .unwrap();
+            println!("Passing buy ixs {:?} for {:?}", buy_ixs.len(), keypair.keypair.pubkey().to_string());
             for ix in buy_ixs {
                 all_ixs.push((keypair.keypair.pubkey(), ix));
             }
         }
 
         let mut current_ixs: Vec<Instruction> = Vec::new();
-        print!("All keypairs:");
-        let _ = self.keypairs_to_treat.iter().map(|keypair| print!(" {:?}", keypair.keypair.pubkey().to_string()));
         print!("Keypair to reach: {:?}", self.treated_keypairs.to_string());
         for ( pubkey, ix) in all_ixs {
             if !reached {
