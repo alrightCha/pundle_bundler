@@ -344,23 +344,21 @@ impl HandlerManager {
         };
 
         if total_token_balance > 1000.0 {
-            tokio::spawn(async move {
-                let client = RpcClient::new(RPC_URL);
-                let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
-                let chunks: Vec<_> = txs.chunks(5).collect();
-                for chunk in chunks {
-                    let chunk_vec = chunk.to_vec();
-                    let _ = jito.submit_bundle(chunk_vec, mint_pubkey, None).await;
-                }
-            });
+            let client = RpcClient::new(RPC_URL);
+            let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
+            let chunks: Vec<_> = txs.chunks(5).collect();
+            for chunk in chunks {
+                let chunk_vec = chunk.to_vec();
+                let _ = jito.submit_bundle(chunk_vec, mint_pubkey, None).await;
+            }
         }
 
         if with_admin_transfer {
-            tokio::time::sleep(Duration::from_secs(10)).await; //waiting for amounts to reach wallets
-            let _ = recursive_pay(requester, mint, None, true).await;
+            let res = recursive_pay(requester, mint, None, true).await;
+            Json(SellResponse { success: res })
+        } else {
+            Json(SellResponse { success: true })
         }
-
-        Json(SellResponse { success: true })
     }
 
     pub async fn withdraw_all_sol(
