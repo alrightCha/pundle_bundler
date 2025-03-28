@@ -169,7 +169,7 @@ impl BundleTransactions {
                         current_tx_ixs.pop();
                         current_tx_ixs.push(tip_ix);
                         tip_ix_count += 1;
-                        self.treated_keypairs = all_ixs[index - 2].0; //Not only did we not add the current item, we also popped the last one.
+                        self.treated_keypairs = all_ixs[index - 1].0;
                         should_break = true;
                     }
                 }
@@ -185,7 +185,8 @@ impl BundleTransactions {
 
                 if !should_break {
                     current_tx_ixs = Vec::new();
-                    let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
+                    let priority_fee_ix =
+                        ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
                     current_tx_ixs.push(priority_fee_ix);
                     current_tx_ixs.push(ix.clone());
                 }
@@ -280,37 +281,54 @@ impl BundleTransactions {
         let new_payer: Arc<Keypair> = Arc::new(new_dev);
         let new_pump = PumpFun::new(new_payer);
         self.pumpfun_client = new_pump;
+
         let mut tip_ix_count = 0;
-        let mut reached: bool = false;
+
         let mut txs: Vec<VersionedTransaction> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
 
-        let mut all_ixs: Vec<(Pubkey, Instruction)> = Vec::new();
+        let mut all_ixs: Vec<Instruction> = Vec::new();
 
+        let mut reached: bool = false;
         for keypair in self.keypairs_to_treat.iter() {
-            let buy_ixs: Vec<Instruction> = self
-                .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, Some(1000), false)
-                .await
-                .unwrap();
-            println!("Passing buy ixs {:?} for {:?}", buy_ixs.len(), keypair.keypair.pubkey().to_string());
-            for ix in buy_ixs {
-                all_ixs.push((keypair.keypair.pubkey(), ix));
+            if !reached {
+                if keypair.keypair.pubkey() == self.treated_keypairs {
+                    reached = true;
+                } else {
+                    println!(
+                        "Continuing for pubkey: {:?}",
+                        keypair.keypair.pubkey().to_string()
+                    );
+                    continue;
+                }
+            }
+            if reached {
+                let buy_ixs: Vec<Instruction> = self
+                    .pumpfun_client
+                    .buy_ixs(
+                        &mint_pubkey,
+                        &keypair.keypair,
+                        keypair.amount,
+                        Some(1000),
+                        false,
+                    )
+                    .await
+                    .unwrap();
+                println!(
+                    "Passing buy ixs {:?} for {:?}",
+                    buy_ixs.len(),
+                    keypair.keypair.pubkey().to_string()
+                );
+                for ix in buy_ixs {
+                    all_ixs.push(ix);
+                }
             }
         }
 
         let mut current_ixs: Vec<Instruction> = Vec::new();
         print!("Keypair to reach: {:?}", self.treated_keypairs.to_string());
-        for ( pubkey, ix) in all_ixs {
-            if !reached {
-                if pubkey == self.treated_keypairs {
-                    reached = true; 
-                }else{
-                    print!("Continuing for pubkey: {:?}", pubkey.to_string());
-                    continue;
-                }
-            }
+        for ix in all_ixs {
             let ixs = vec![ix.clone()];
             let can = self.is_allowed(&current_ixs, &ixs).await;
             if can {
@@ -465,7 +483,7 @@ impl BundleTransactions {
                 all_ixs_signers.push(self.dev_keypair.insecure_clone());
             } else if signer == self.mint_keypair.pubkey() {
                 all_ixs_signers.push(self.mint_keypair.insecure_clone());
-            }else if signer == self.admin_keypair.pubkey() {
+            } else if signer == self.admin_keypair.pubkey() {
                 all_ixs_signers.push(self.admin_keypair.insecure_clone());
             }
         }
