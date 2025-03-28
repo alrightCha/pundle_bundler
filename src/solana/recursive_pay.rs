@@ -186,8 +186,9 @@ pub async fn recursive_pay(
         if size > 1232 {
             let mut transaction =
                 Transaction::new_with_payer(&current_tx_ixs, Some(&recipient.pubkey()));
-            let tx_signers: Vec<Keypair> = get_signers(&current_tx_ixs, &signers);
+            let tx_signers: Vec<Keypair> = get_signers(&current_tx_ixs, &signers, &recipient);
             let signing: Vec<&Keypair> = tx_signers.iter().collect();
+            println!("Signers: {:?}", signing.iter().map(|kp| kp.pubkey()));
             transaction.sign(&signing, blockhash);
             // Serialize the transaction
             let serialized_tx =
@@ -210,9 +211,10 @@ pub async fn recursive_pay(
         };
         let mut transaction =
             Transaction::new_with_payer(&current_tx_ixs, Some(&recipient.pubkey()));
-        let tx_signers: Vec<Keypair> = get_signers(&current_tx_ixs, &signers);
+        let tx_signers: Vec<Keypair> = get_signers(&current_tx_ixs, &signers, &recipient);
         let signing: Vec<&Keypair> = tx_signers.iter().collect();
         transaction.sign(&signing, blockhash);
+        println!("Signers: {:?}", signing.iter().map(|kp| kp.pubkey()));
         let serialized_tx = bs58::encode(bincode::serialize(&transaction).unwrap()).into_string();
         txs.push(serialized_tx);
     }
@@ -234,7 +236,7 @@ pub async fn recursive_pay(
     }
 }
 
-fn get_signers(ixs: &Vec<Instruction>, signers: &Vec<Keypair>) -> Vec<Keypair> {
+fn get_signers(ixs: &Vec<Instruction>, signers: &Vec<Keypair>, admin_keypair: &Keypair) -> Vec<Keypair> {
     let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
 
     for ix in ixs {
@@ -250,6 +252,6 @@ fn get_signers(ixs: &Vec<Instruction>, signers: &Vec<Keypair>) -> Vec<Keypair> {
             all_ixs_signers.push(kp.insecure_clone());
         }
     }
-
+    all_ixs_signers.push(admin_keypair.insecure_clone());
     all_ixs_signers
 }
