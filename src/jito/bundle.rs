@@ -327,6 +327,7 @@ pub async fn process_bundle(
     // Fire and forget the callback
     let callback_payload = serde_json::json!({
         "mint": mint.pubkey().to_string(),
+        "lut": lut_pubkey.to_string() 
     });
 
     tokio::spawn(async move {

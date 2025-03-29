@@ -1,14 +1,14 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
-use solana_sdk::instruction::Instruction;
-use borsh::{BorshDeserialize, BorshSerialize};
 //Has requester public key, token metadata, dev buy amount and wallets buy amount
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostBundleRequest {
     pub requester_pubkey: String,
-    pub name: String, 
+    pub name: String,
     pub symbol: String,
     pub uri: String,
     pub dev_buy_amount: u64,
@@ -19,10 +19,10 @@ pub struct PostBundleRequest {
 #[serde(rename_all = "camelCase")]
 #[derive(Debug)]
 pub struct Wallet {
-    pub pubkey: String, 
+    pub pubkey: String,
     pub secret_key: String,
     pub is_dev: bool,
-    pub amount: u64
+    pub amount: u64,
 }
 
 #[derive(Serialize)]
@@ -32,7 +32,7 @@ pub struct PostBundleResponse {
     pub pubkey: String,
     pub mint: String,
     pub due_amount: u64,
-    pub wallets: Vec<Wallet>
+    pub wallets: Vec<Wallet>,
 }
 
 #[derive(Deserialize)]
@@ -53,7 +53,7 @@ pub struct GetBundleWalletsResponse {
 
 #[derive(Deserialize)]
 pub struct UniqueSellRequest {
-    pub pubkey: String, 
+    pub pubkey: String,
     pub mint: String,
     pub wallet: String,
     pub amount: u64,
@@ -85,14 +85,12 @@ pub struct CreateTokenMetadata {
     pub creator: Pubkey,
 }
 
-#[derive(Deserialize)]
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct GetPoolInformationRequest {
     pub mint: String,
 }
 
-#[derive(Debug)]
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolInformation {
     pub current_mc: u64,
@@ -101,7 +99,6 @@ pub struct PoolInformation {
     pub reserve_sol: u64,
     pub reserve_token: u64,
 }
-
 
 #[derive(Deserialize)]
 pub struct BumpRequest {
@@ -132,8 +129,18 @@ pub struct RecursivePayResponse {
     pub signatures: Vec<String>,
 }
 
-#[derive(Debug)]
-pub struct InstructionWithSigners<'a> {
-    pub instructions: Vec<Instruction>,
-    pub signers: Vec<&'a Keypair>,
+#[derive(Deserialize)]
+pub struct LutRecord {
+    pub mint: String,
+    pub lut: String,
+}
+
+#[derive(Deserialize)]
+pub struct LutInit {
+    pub luts: Vec<LutRecord>,
+}
+
+#[derive(Serialize)]
+pub struct LutResponse {
+    pub confirmed: bool,
 }

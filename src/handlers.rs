@@ -1,7 +1,8 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
-    BumpRequest, BumpResponse, GetPoolInformationRequest, PoolInformation, RecursivePayRequest,
-    SellAllRequest, SellResponse, UniqueSellRequest, WithdrawAllSolRequest,
+    BumpRequest, BumpResponse, GetPoolInformationRequest, LutInit, LutRecord, LutResponse,
+    PoolInformation, RecursivePayRequest, SellAllRequest, SellResponse, UniqueSellRequest,
+    WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::utils::get_splits;
@@ -401,5 +402,39 @@ impl HandlerManager {
         });
 
         Json(BumpResponse { success: true })
+    }
+
+    pub async fn setup_lut_record(
+        &self,
+        pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
+        Json(payload): Json<LutInit>,
+    ) -> Json<LutResponse> {
+        let luts: Vec<LutRecord> = payload.luts;
+        let mut all_successful = true;
+
+        for lut_record in luts {
+            match Pubkey::from_str(&lut_record.lut) {
+                Ok(lut_pubkey) => {
+                    if pubkey_to_lut
+                        .lock()
+                        .await
+                        .insert(lut_record.mint, lut_pubkey)
+                        .is_none()
+                    {
+                        // Insert succeeded
+                    } else {
+                        // Key already existed, still counts as successful
+                    }
+                }
+                Err(_) => {
+                    all_successful = false;
+                    break;
+                }
+            }
+        }
+
+        Json(LutResponse {
+            confirmed: all_successful,
+        })
     }
 }
