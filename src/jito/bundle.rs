@@ -114,17 +114,13 @@ pub async fn process_bundle(
     pubkeys_for_lut.push(dev_ata_pubkey);
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
-    if extend_tx_size > 1232 {
-        //Split lut into two vectors
-        let split_point = pubkeys_for_lut.len() / 2;
-        let first_half = pubkeys_for_lut[..split_point].to_vec();
-        let second_half = pubkeys_for_lut[split_point..].to_vec();
-        //Extend lut with addresses & attached token accounts
-        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &first_half).unwrap();
-        println!("LUT extended once: {:?}", extended_lut);
-        //Extend lut with addresses & attached token accounts
-        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &second_half).unwrap();
-        println!("LUT extended twice: {:?}", extended_lut);
+    let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
+    if num_txs > 1 {
+        let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
+        for (i, chunk) in pubkeys_for_lut.chunks(chunk_size).enumerate() {
+            let extended_lut = extend_lut(&client, &admin_kp, lut.0, &chunk.to_vec()).unwrap();
+            println!("LUT extended part {}/{}: {:?}", i + 1, num_txs, extended_lut);
+        }
     } else {
         //Extend lut with addresses & attached token accounts
         let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
