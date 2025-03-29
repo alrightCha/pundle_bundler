@@ -409,7 +409,8 @@ impl HandlerManager {
         pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
         Json(payload): Json<LutInit>,
     ) -> Json<LutResponse> {
-        print!("Received init lut with records: {:?}", payload.luts);
+        println!("Received init lut");
+        println!("with records: {:?}", payload.luts.len());
         let luts: Vec<LutRecord> = payload.luts;
         let mut all_successful = true;
 
