@@ -183,7 +183,7 @@ pub async fn process_bundle(
     );
 
     let tx_size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-    println!("Transaction size: {:?}", tx_size);
+    println!("Transfer Transaction size: {:?}", tx_size);
 
     if tx_size > 1232 {
         // Split instructions into two vectors
