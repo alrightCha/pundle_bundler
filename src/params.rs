@@ -130,12 +130,14 @@ pub struct RecursivePayResponse {
 }
 
 #[derive(Deserialize)]
+#[derive(Debug)]
 pub struct LutRecord {
     pub mint: String,
     pub lut: String,
 }
 
 #[derive(Deserialize)]
+#[derive(Debug)]
 pub struct LutInit {
     pub luts: Vec<LutRecord>,
 }
