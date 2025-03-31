@@ -457,7 +457,6 @@ impl BundleTransactions {
             txs.len(),
             tip_ix_count
         );
-        test_transactions(&self.client, &txs).await;
         txs
     }
 

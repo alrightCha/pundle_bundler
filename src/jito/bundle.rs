@@ -119,7 +119,12 @@ pub async fn process_bundle(
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
         for (i, chunk) in pubkeys_for_lut.chunks(chunk_size).enumerate() {
             let extended_lut = extend_lut(&client, &admin_kp, lut.0, &chunk.to_vec()).unwrap();
-            println!("LUT extended part {}/{}: {:?}", i + 1, num_txs, extended_lut);
+            println!(
+                "LUT extended part {}/{}: {:?}",
+                i + 1,
+                num_txs,
+                extended_lut
+            );
         }
     } else {
         //Extend lut with addresses & attached token accounts
@@ -186,37 +191,44 @@ pub async fn process_bundle(
     println!("Transfer Transaction size: {:?}", tx_size);
 
     if tx_size > 1232 {
-        // Split instructions into two vectors
-        let instructions_len = instructions.len();
-        let split_point = instructions_len / 2;
+        // Calculate number of transactions needed based on size
+        let num_transactions = (tx_size as f64 / 1232.0).ceil() as usize;
+        let instructions_per_tx = instructions.len() / num_transactions;
 
-        let mut first_instructions: Vec<Instruction> = instructions[..split_point].to_vec();
-        let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
-        first_instructions.push(jito_tip_ix);
-        let second_instructions = instructions[split_point..].to_vec();
+        // Split instructions into chunks
+        let mut chunks: Vec<Vec<Instruction>> = Vec::new();
+        let mut start = 0;
+        
+        for i in 0..num_transactions {
+            let end = if i == num_transactions - 1 {
+                instructions.len() // Last chunk gets remaining instructions
+            } else {
+                start + instructions_per_tx
+            };
+            
+            let mut chunk = instructions[start..end].to_vec();
+            
+            // Add jito tip instruction to each chunk
+            let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
+            chunk.push(jito_tip_ix);
+            
+            chunks.push(chunk);
+            start = end;
+        }
 
-        // Build and send first transaction
-        let first_tx = build_transaction(
-            &client,
-            &first_instructions,
-            vec![&admin_kp],
-            address_lookup_table_account.clone(),
-            &admin_kp,
-        );
-        let _ = jito.one_tx_bundle(first_tx).await.unwrap();
-
-        // Build and send second transaction
-        let second_tx = build_transaction(
-            &client,
-            &second_instructions,
-            vec![&admin_kp],
-            address_lookup_table_account.clone(),
-            &admin_kp,
-        );
-        let _ = jito.one_tx_bundle(second_tx).await.unwrap();
+        // Build and send each transaction
+        for chunk in chunks {
+            let tx = build_transaction(
+                &client,
+                &chunk,
+                vec![&admin_kp],
+                address_lookup_table_account.clone(),
+                &admin_kp,
+            );
+            let _ = jito.one_tx_bundle(tx).await.unwrap();
+        }
     } else {
         //Sending transaction to fund wallets from admin.
-        //TODO: Check if this is complete. might require tip instruction, signature to tx, and confirmation that bundle is complete
         let _ = jito.one_tx_bundle(tx).await.unwrap();
     }
 
@@ -285,34 +297,32 @@ pub async fn process_bundle(
         let jito = JitoBundle::new(rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
         tokio::spawn(async move {
-            //Check every 500ms if token is live, then build and submit rest of txs
-            let mut is_live: bool = false;
             let start_time = std::time::Instant::now();
 
-            while !is_live {
+            loop {
                 if start_time.elapsed() > Duration::from_secs(120) {
                     println!("Timeout reached after 2 minutes, killing process");
                     return;
                 }
-
                 let live = pumpfun_client.is_token_live(&mint_pubkey).await;
                 if live {
-                    is_live = true;
+                    let late_txs = txs_builder.collect_rest_txs().await;
+                    let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
+                        late_txs.chunks(5).map(|c| c.to_vec()).collect();
+
+                    print!("We received {:?} late bundles", late_txs_chunks.len());
+
+                    for chunk in late_txs_chunks {
+                        // Only send first chunk for testing
+                        let _ = jito
+                            .submit_bundle(chunk, mint_pubkey, Some(&pumpfun_client))
+                            .await
+                            .unwrap();
+                    }
+                    break;
                 } else {
-                    sleep(Duration::from_millis(500));
+                    sleep(Duration::from_millis(100));
                 }
-            }
-            let late_txs = txs_builder.collect_rest_txs().await;
-            let late_txs_chunks: Vec<Vec<VersionedTransaction>> = late_txs.chunks(5).map(|c| c.to_vec()).collect();
-
-            print!("We received {:?} late bundles", late_txs_chunks.len());
-
-            for chunk in late_txs_chunks {
-                // Only send first chunk for testing
-                let _ = jito
-                    .submit_bundle(chunk, mint_pubkey, Some(&pumpfun_client))
-                    .await
-                    .unwrap();
             }
         });
     }
@@ -327,7 +337,7 @@ pub async fn process_bundle(
     // Fire and forget the callback
     let callback_payload = serde_json::json!({
         "mint": mint.pubkey().to_string(),
-        "lut": lut_pubkey.to_string() 
+        "lut": lut_pubkey.to_string()
     });
 
     tokio::spawn(async move {
