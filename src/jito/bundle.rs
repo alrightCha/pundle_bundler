@@ -118,7 +118,7 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
-    let extend_lut_blockheight: u64 = client.get_block_height().unwrap();
+    let extend_lut_blockheight: (Hash, u64) = client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).unwrap();
 
     if num_txs > 1 {
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
@@ -140,10 +140,11 @@ pub async fn process_bundle(
 
     loop {
         let last_hash: u64 = client.get_block_height_with_commitment(CommitmentConfig::finalized()).unwrap();
-        if last_hash > extend_lut_blockheight + 1 {
+        if last_hash > extend_lut_blockheight.1 + 5 {
             break;
         } else {
-            sleep(Duration::from_millis(100));
+            println!("Waiting...");
+            sleep(Duration::from_millis(500));
         }
     }
 

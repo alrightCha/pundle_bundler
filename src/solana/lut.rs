@@ -143,7 +143,7 @@ pub fn extend_lut(
         CommitmentConfig::finalized(),  // Use finalized commitment
         RpcSendTransactionConfig {
             skip_preflight: true,  // Skip preflight to avoid false negatives
-            preflight_commitment: Some(CommitmentLevel::Processed),
+            preflight_commitment: Some(CommitmentLevel::Finalized),
             ..RpcSendTransactionConfig::default()
         },
     )?;
