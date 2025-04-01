@@ -1,5 +1,6 @@
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     account::Account,
@@ -117,7 +118,7 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
-    let extend_lut_block: Hash = client.get_latest_blockhash().unwrap();
+    let extend_lut_blockheight: u64 = client.get_block_height().unwrap();
 
     if num_txs > 1 {
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
@@ -138,8 +139,8 @@ pub async fn process_bundle(
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     loop {
-        let last_hash: Hash = client.get_latest_blockhash().unwrap();
-        if last_hash > extend_lut_block {
+        let last_hash: u64 = client.get_block_height_with_commitment(CommitmentConfig::finalized()).unwrap();
+        if last_hash > extend_lut_blockheight + 1 {
             break;
         } else {
             sleep(Duration::from_millis(100));
