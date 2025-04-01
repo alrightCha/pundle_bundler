@@ -118,7 +118,9 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
-    let extend_lut_blockheight: (Hash, u64) = client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).unwrap();
+    let extend_lut_blockheight: (Hash, u64) = client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .unwrap();
 
     if num_txs > 1 {
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
@@ -139,7 +141,9 @@ pub async fn process_bundle(
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     loop {
-        let last_hash: u64 = client.get_block_height_with_commitment(CommitmentConfig::finalized()).unwrap();
+        let last_hash: u64 = client
+            .get_block_height_with_commitment(CommitmentConfig::finalized())
+            .unwrap();
         if last_hash > extend_lut_blockheight.1 + 2 {
             break;
         } else {
@@ -191,6 +195,8 @@ pub async fn process_bundle(
             .collect::<Vec<u64>>()
     );
 
+    sleep(Duration::from_secs(10));
+    
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
@@ -241,14 +247,8 @@ pub async fn process_bundle(
         let mut txs: Vec<VersionedTransaction> = Vec::new();
         // Build and send each transaction
         for chunk in chunks {
-            let lut: AddressLookupTableAccount = lut_account.clone(); 
-            let tx = build_transaction(
-                &client,
-                &chunk,
-                vec![&admin_kp],
-                lut,
-                &admin_kp,
-            );
+            let lut: AddressLookupTableAccount = lut_account.clone();
+            let tx = build_transaction(&client, &chunk, vec![&admin_kp], lut, &admin_kp);
             txs.push(tx);
         }
         test_transactions(&client, &txs).await;
@@ -299,6 +299,20 @@ pub async fn process_bundle(
                 intended_amount - actual_balance
             }
         );
+    }
+    println!("LUT ACCOUNT: {:?}", lut_account.key.to_string());
+    println!("LUT : {:?}", lut.0);
+
+    match verify_lut_ready(&client, &lut_account.key) {
+        Ok(true) => {
+            println!("LUT is ready");
+        }
+        Ok(false) => {
+            println!("LUT is not Ready...");
+        }
+        Err(e) => {
+            println!("Error verifying LUT: {:?}", e);
+        }
     }
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction

@@ -9,7 +9,6 @@ use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
-    address_lookup_table::state::AddressLookupTable,
     address_lookup_table::AddressLookupTableAccount,
     instruction::Instruction,
     pubkey::Pubkey,
@@ -72,6 +71,9 @@ impl BundleTransactions {
         let treated_keypairs: Pubkey = Pubkey::default();
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
 
+        println!("Creating BundleTransactions Class with lut: {:?}", address_lookup_table_account.key.to_string());
+        println!("Accounts in lut : {:?}", address_lookup_table_account.addresses);
+
         Self {
             admin_keypair,
             dev_keypair,
@@ -79,7 +81,7 @@ impl BundleTransactions {
             client,
             pumpfun_client,
             jito,
-            address_lookup_table_account: address_lookup_table_account.clone(),
+            address_lookup_table_account,
             keypairs_to_treat,
             treated_keypairs,
         }
