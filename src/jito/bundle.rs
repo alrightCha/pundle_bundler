@@ -13,7 +13,6 @@ use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
 use super::help::BundleTransactions;
-use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::{
@@ -24,6 +23,7 @@ use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
     solana::lut::extend_lut_size,
 };
+use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 
@@ -198,24 +198,21 @@ pub async fn process_bundle(
         // Split instructions into chunks
         let mut chunks: Vec<Vec<Instruction>> = Vec::new();
         let mut start = 0;
-        
+
         for i in 0..num_transactions {
             let end = if i == num_transactions - 1 {
                 instructions.len() // Last chunk gets remaining instructions
             } else {
                 start + instructions_per_tx
             };
-            
-            let mut chunk = instructions[start..end].to_vec();
-            
-            // Add jito tip instruction to each chunk
-            let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
-            chunk.push(jito_tip_ix);
-            
+
+            let chunk = instructions[start..end].to_vec();
+
             chunks.push(chunk);
             start = end;
         }
 
+        let mut txs: Vec<VersionedTransaction> = Vec::new();
         // Build and send each transaction
         for chunk in chunks {
             let tx = build_transaction(
@@ -225,8 +222,10 @@ pub async fn process_bundle(
                 address_lookup_table_account.clone(),
                 &admin_kp,
             );
-            let _ = jito.one_tx_bundle(tx).await.unwrap();
+            txs.push(tx);
         }
+        test_transactions(&client, &txs).await;
+        let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
     } else {
         //Sending transaction to fund wallets from admin.
         let _ = jito.one_tx_bundle(tx).await.unwrap();
