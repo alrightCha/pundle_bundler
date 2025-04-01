@@ -140,7 +140,7 @@ pub async fn process_bundle(
 
     loop {
         let last_hash: u64 = client.get_block_height_with_commitment(CommitmentConfig::finalized()).unwrap();
-        if last_hash > extend_lut_blockheight.1 + 5 {
+        if last_hash > extend_lut_blockheight.1 + 2 {
             break;
         } else {
             println!("Waiting...");
@@ -194,8 +194,8 @@ pub async fn process_bundle(
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
-    let address_lookup_table_account = AddressLookupTableAccount {
-        key: lut_pubkey,
+    let lut_account: AddressLookupTableAccount = AddressLookupTableAccount {
+        key: lut.0,
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
@@ -241,11 +241,12 @@ pub async fn process_bundle(
         let mut txs: Vec<VersionedTransaction> = Vec::new();
         // Build and send each transaction
         for chunk in chunks {
+            let lut: AddressLookupTableAccount = lut_account.clone(); 
             let tx = build_transaction(
                 &client,
                 &chunk,
                 vec![&admin_kp],
-                address_lookup_table_account.clone(),
+                lut,
                 &admin_kp,
             );
             txs.push(tx);
@@ -304,7 +305,7 @@ pub async fn process_bundle(
     let mut txs_builder: BundleTransactions = BundleTransactions::new(
         dev_keypair_with_amount.keypair,
         mint,
-        lut_pubkey,
+        lut_account,
         keypairs_with_amount,
     );
 
@@ -377,6 +378,6 @@ pub async fn process_bundle(
     });
 
     println!("Bundle completed");
-    println!("Bundle lut: {:?}", address_lookup_table_account);
-    Ok(address_lookup_table_account.key)
+    println!("Bundle lut: {:?}", lut_pubkey);
+    Ok(lut_pubkey)
 }

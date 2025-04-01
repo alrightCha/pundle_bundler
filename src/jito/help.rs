@@ -46,7 +46,7 @@ impl BundleTransactions {
     pub fn new(
         dev_keypair: Keypair,
         mint_keypair: &Keypair,
-        lut_pubkey: Pubkey,
+        address_lookup_table_account: AddressLookupTableAccount,
         others_with_amount: Vec<KeypairWithAmount>,
     ) -> Self {
         dotenv().ok();
@@ -68,14 +68,6 @@ impl BundleTransactions {
 
         let pumpfun_client = PumpFun::new(payer);
 
-        let raw_account = client.get_account(&lut_pubkey).unwrap();
-        let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
-
-        let address_lookup_table_account = AddressLookupTableAccount {
-            key: lut_pubkey,
-            addresses: address_lookup_table.addresses.to_vec(),
-        };
-
         let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
         let treated_keypairs: Pubkey = Pubkey::default();
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
@@ -87,7 +79,7 @@ impl BundleTransactions {
             client,
             pumpfun_client,
             jito,
-            address_lookup_table_account,
+            address_lookup_table_account: address_lookup_table_account.clone(),
             keypairs_to_treat,
             treated_keypairs,
         }
