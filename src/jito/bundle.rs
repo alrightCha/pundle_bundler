@@ -4,6 +4,7 @@ use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     account::Account,
     address_lookup_table::{state::AddressLookupTable, AddressLookupTableAccount},
+    hash::Hash,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -116,6 +117,8 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
+    let extend_lut_block: Hash = client.get_latest_blockhash().unwrap();
+
     if num_txs > 1 {
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
         for (i, chunk) in pubkeys_for_lut.chunks(chunk_size).enumerate() {
@@ -133,6 +136,15 @@ pub async fn process_bundle(
         println!("LUT extended with addresses: {:?}", extended_lut);
     }
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
+
+    loop {
+        let last_hash: Hash = client.get_latest_blockhash().unwrap();
+        if last_hash > extend_lut_block {
+            break;
+        } else {
+            sleep(Duration::from_millis(100));
+        }
+    }
 
     println!(
         "Amount of lamports to transfer to dev: {}",
