@@ -144,7 +144,7 @@ pub async fn process_bundle(
         let last_hash: u64 = client
             .get_block_height_with_commitment(CommitmentConfig::finalized())
             .unwrap();
-        if last_hash > extend_lut_blockheight.1 + 2 {
+        if last_hash > extend_lut_blockheight.1 + 1 {
             break;
         } else {
             println!("Waiting...");
@@ -195,8 +195,6 @@ pub async fn process_bundle(
             .collect::<Vec<u64>>()
     );
 
-    sleep(Duration::from_secs(10));
-    
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 

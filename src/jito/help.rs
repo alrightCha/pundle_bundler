@@ -173,7 +173,7 @@ impl BundleTransactions {
                     &current_tx_ixs,
                     signers.iter().collect(),
                     self.address_lookup_table_account.clone(),
-                    &self.dev_keypair,
+                    &self.admin_keypair,
                 );
                 transactions.push(tx);
 
@@ -208,7 +208,7 @@ impl BundleTransactions {
                     &current_tx_ixs,
                     last_tx_signers.iter().collect(),
                     self.address_lookup_table_account.clone(),
-                    &self.dev_keypair,
+                    &self.admin_keypair,
                 );
                 transactions.push(tx);
                 tip_ix_count += 1;
@@ -222,7 +222,7 @@ impl BundleTransactions {
                         &current_tx_ixs,
                         last_tx_signers.iter().collect(),
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     transactions.push(tx);
                     tip_ix_count += 1;
@@ -235,7 +235,7 @@ impl BundleTransactions {
                         &current_tx_ixs,
                         tx_signers.iter().collect(),
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     let tip_ix = self
                         .jito
@@ -249,7 +249,7 @@ impl BundleTransactions {
                         &in_vec,
                         signer,
                         self.address_lookup_table_account.clone(),
-                        &self.dev_keypair,
+                        &self.admin_keypair,
                     );
                     transactions.push(before_last_tx);
                     transactions.push(last_tx);
