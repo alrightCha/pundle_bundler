@@ -71,15 +71,17 @@ impl JitoBundle {
     }
 
     //Requires that transaction is already signed
-    pub async fn one_tx_bundle(&self, transaction: VersionedTransaction) -> Result<()> {
+    pub async fn one_tx_bundle(&self, transaction: Transaction) -> Result<()> {
         let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction)?);
         let serialized_tx_size = serialized_tx.len();
         println!("Transaction size in bytes: {}", serialized_tx_size);
         // Send transaction using Jito SDK
         println!("Sending transaction...");
+
         let params = json!({
             "tx": serialized_tx
         });
+
         let response = self.jito_sdk.send_txn(Some(params), true).await?;
 
         // Extract signature from response

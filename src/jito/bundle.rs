@@ -1,14 +1,15 @@
-use core::time;
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     account::Account,
     address_lookup_table::{state::AddressLookupTable, AddressLookupTableAccount},
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::VersionedTransaction,
+    transaction::{Transaction, VersionedTransaction},
 };
+
 use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
@@ -138,11 +139,12 @@ pub async fn process_bundle(
         dev_keypair_with_amount.amount
     );
 
-    let admin_to_dev_ix = transfer_ix(
+    let admin_to_dev_ix: Instruction = transfer_ix(
         &admin_kp.pubkey(),
         &dev_keypair_with_amount.keypair.pubkey(),
         dev_keypair_with_amount.amount,
     );
+
     let admin_to_keypair_ixs: Vec<Instruction> = keypairs_with_amount
         .iter()
         .map(|keypair| {
@@ -153,42 +155,52 @@ pub async fn process_bundle(
             )
         })
         .collect();
+
     let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
 
+    let priority_fee_amount = 7_000; // 0.000007 SOL
+                                     // Create priority fee instruction
+    let set_compute_unit_price_ix =
+        ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+
     //Instructions to send sol from admin to dev + keypairs
-    let mut instructions: Vec<Instruction> = vec![admin_to_dev_ix];
+    let mut instructions: Vec<Instruction> = vec![set_compute_unit_price_ix, admin_to_dev_ix];
     instructions.extend(admin_to_keypair_ixs);
     instructions.push(jito_tip_ix);
 
     println!("LUT address: {:?}", lut.0);
     println!(
-        "Addresses: {:?}",
+        "Amounts to send : {:?}",
         keypairs_with_amount
             .iter()
-            .map(|keypair| keypair.keypair.pubkey())
-            .collect::<Vec<Pubkey>>()
+            .map(|keypair| keypair.amount)
+            .collect::<Vec<u64>>()
     );
 
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
-
-    println!("Address lookup table: {:?}", address_lookup_table);
 
     let address_lookup_table_account = AddressLookupTableAccount {
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let tx = build_transaction(
-        &client,
-        &instructions,
-        vec![&admin_kp],
-        address_lookup_table_account.clone(),
-        &admin_kp,
-    );
+    println!("Instructions length : {:?}", instructions.len());
 
-    let tx_size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+    // Create transaction with all instructions
+    let mut transaction = Transaction::new_with_payer(&instructions, Some(&admin_kp.pubkey()));
+
+    // Get recent blockhash
+    let recent_blockhash = client.get_latest_blockhash()?;
+
+    // Sign Transaction
+    transaction.sign(&[&admin_kp], recent_blockhash);
+
+    let tx_size: usize = bincode::serialized_size(&transaction).unwrap() as usize;
+
     println!("Transfer Transaction size: {:?}", tx_size);
+    let admin_balance = client.get_balance(&admin_kp.pubkey()).unwrap();
+    println!("Admin balance: {:?}", admin_balance);
 
     if tx_size > 1232 {
         // Calculate number of transactions needed based on size
@@ -228,7 +240,7 @@ pub async fn process_bundle(
         let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
     } else {
         //Sending transaction to fund wallets from admin.
-        let _ = jito.one_tx_bundle(tx).await.unwrap();
+        let _ = jito.one_tx_bundle(transaction).await.unwrap();
     }
 
     println!("Transaction built");
