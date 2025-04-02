@@ -127,7 +127,7 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
-    let extend_lut_blockheight: (Hash, u64) = client
+    let mut extend_lut_blockheight: (Hash, u64) = client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .unwrap();
 
@@ -142,6 +142,9 @@ pub async fn process_bundle(
                 extended_lut
             );
         }
+        extend_lut_blockheight = client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+            .unwrap();
     } else {
         //Extend lut with addresses & attached token accounts
         let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
@@ -153,7 +156,7 @@ pub async fn process_bundle(
         let last_hash: u64 = client
             .get_block_height_with_commitment(CommitmentConfig::finalized())
             .unwrap();
-        if last_hash > extend_lut_blockheight.1 + 1 {
+        if last_hash > extend_lut_blockheight.1 + 2 {
             break;
         } else {
             println!("Waiting...");
@@ -333,7 +336,7 @@ pub async fn process_bundle(
         mint,
         lut_account,
         keypairs_with_amount,
-        tip_account
+        tip_account,
     );
 
     //Submitting first bundle

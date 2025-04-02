@@ -38,11 +38,8 @@ pub struct BundleTransactions {
     jito: JitoBundle,
     address_lookup_table_account: AddressLookupTableAccount,
     keypairs_to_treat: Vec<KeypairWithAmount>,
-    treated_keypairs: Pubkey,
     jito_tip_account: Pubkey,
 }
-
-const MAX_TX_SIZE: usize = 1232;
 
 impl BundleTransactions {
     pub fn new(
@@ -72,7 +69,6 @@ impl BundleTransactions {
         let pumpfun_client = PumpFun::new(payer);
 
         let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
-        let treated_keypairs: Pubkey = Pubkey::default();
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
 
         println!(
@@ -93,7 +89,6 @@ impl BundleTransactions {
             jito,
             address_lookup_table_account,
             keypairs_to_treat,
-            treated_keypairs,
             jito_tip_account,
         }
     }
@@ -137,7 +132,7 @@ impl BundleTransactions {
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
 
         tx_ixs.extend(dev_ix);
-        let mut last_index = 2; 
+        let mut last_index = 2;
         for (index, keypair) in self.keypairs_to_treat.iter().enumerate() {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
@@ -174,7 +169,7 @@ impl BundleTransactions {
                     }
                     tx_ixs = vec![priority_fee_ix.clone()];
                     tx_ixs.extend(buy_ixs);
-                    last_index = index - 1; 
+                    last_index = index - 1;
                 }
             }
         }
@@ -237,28 +232,30 @@ impl BundleTransactions {
             }
         }
 
-        if tx_ixs.len() > 1 { //higher than just the priority fee ix
+        if tx_ixs.len() > 1 {
+            //higher than just the priority fee ix
             tx_ixs.push(jito_tip_ix);
             let final_tx = self.get_tx(&tx_ixs);
             txs.push(final_tx);
         }
-         
+
         txs
     }
 
     pub fn has_delayed_bundle(&self) -> bool {
-        self.keypairs_to_treat.len() > 27
+        self.keypairs_to_treat.len() > 26
     }
 
     fn get_tx(&self, ixs: &Vec<Instruction>) -> VersionedTransaction {
         let signers = self.get_signers(&ixs);
-        build_transaction(
+        let tx = build_transaction(
             &self.client,
             &ixs,
             signers.iter().collect(),
             self.address_lookup_table_account.clone(),
             &self.admin_keypair,
-        )
+        );
+        tx
     }
 
     fn get_signers(&self, ixs: &Vec<Instruction>) -> Vec<Keypair> {

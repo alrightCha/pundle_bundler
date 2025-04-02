@@ -119,7 +119,6 @@ pub fn build_transaction(
     );
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
-
     tx
 }
 
