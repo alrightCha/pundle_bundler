@@ -54,25 +54,24 @@ pub async fn process_bundle(
 
     pubkeys_for_lut.push(admin_kp.pubkey());
 
-    //Adding tip account to lut
-    pubkeys_for_lut.push(tip_account);
-
     //Adding other addresses to lut
-    let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
-    pubkeys_for_lut.extend(extra_addresses);
+    //let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
+    //pubkeys_for_lut.extend(extra_addresses);
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
-
+    //Adding tip account to lut
+    pubkeys_for_lut.push(tip_account);
+    
     for keypair in keypairs_with_amount.iter() {
-        pubkeys_for_lut.push(keypair.keypair.pubkey());
+        //pubkeys_for_lut.push(keypair.keypair.pubkey());
         let ata_pubkey = pumpfun_client.get_ata(&keypair.keypair.pubkey(), &mint.pubkey());
         println!("ATA pubkey: {:?}", ata_pubkey);
-        pubkeys_for_lut.push(ata_pubkey);
+       // pubkeys_for_lut.push(ata_pubkey);
     }
 
     let dev_ata_pubkey =
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
-    pubkeys_for_lut.push(dev_ata_pubkey);
+    //pubkeys_for_lut.push(dev_ata_pubkey);
 
     let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut).unwrap();
 
