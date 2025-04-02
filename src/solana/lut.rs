@@ -18,7 +18,7 @@ use solana_sdk::{
 };
 use std::result::Result::Ok;
 use std::{thread, time::Duration};
-
+use tokio::time::sleep;
 use crate::solana::utils::get_slot_and_blockhash;
 
 fn send_transaction(
@@ -103,6 +103,10 @@ pub fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pubkey>) 
             )
             .unwrap();
     }
+
+
+    println!("Sleeping...");
+    sleep(Duration::new(60, 0));
 
     Ok(lut_pubkey)
 }
