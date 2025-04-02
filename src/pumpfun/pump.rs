@@ -211,37 +211,48 @@ impl PumpFun {
         Ok(instructions)
     }
 
+     /// Get all addresses to push to lut to optimize it for interacting with pumpfun instructions
+    ///
+    /// # Arguments
+    ///
+    /// * `mint` - Public key of the token mint to sell
+    ///
+    /// # Returns vec of public keys to extend 
+    /// # Note 
+    /// Should not have well known accounts and system programs should not be in lut 
+    /// From Solana's documentation: The addresses of programs that are invoked in the transaction (i.e., the program IDs of each instruction) must be present in the static account keys and cannot be loaded through an address table lookup. So any program ID that's part of an instruction's program_id field must be present in the static list, not via LUT. 
+    /// Returns the sell transaction request builder
+    /// 
     pub async fn get_addresse_for_lut(&self, mint: &Pubkey) -> Vec<Pubkey> {
+
+        //AUTHORITY & FEE RECIPIENT
         let global_fee_recipient: Pubkey = self.get_global_account().await.unwrap().fee_recipient;
+        let auth: Pubkey = pumpfun::constants::accounts::EVENT_AUTHORITY;
+
+        //let pump: Pubkey = pumpfun::constants::accounts::PUMPFUN; // Should add ? 
+
+        //PDAS
+        let mint_authority_pda: Pubkey = Self::get_mint_authority_pda(); 
+        let metadata_pda: Pubkey = Self::get_metadata_pda(&mint); 
         let global_pda: Pubkey = self.get_global_pda();
         let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
-        let system_program: Pubkey = pumpfun::constants::accounts::SYSTEM_PROGRAM;
-        let token_program: Pubkey = pumpfun::constants::accounts::TOKEN_PROGRAM;
-        let rent: Pubkey = pumpfun::constants::accounts::RENT;
-        let auth: Pubkey = pumpfun::constants::accounts::EVENT_AUTHORITY;
-        let pump: Pubkey = pumpfun::constants::accounts::PUMPFUN;
-        let mint_authority_pda: Pubkey = Self::get_mint_authority_pda(); 
+
+        //ATA
         let ata: Pubkey = get_associated_token_address(&bonding_curve, &mint); 
-        let metadata: Pubkey = pumpfun::constants::accounts::MPL_TOKEN_METADATA; 
-        let metadata_pda: Pubkey = Self::get_metadata_pda(&mint); 
-        let associated_token_program: Pubkey = pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM; 
+
+
         vec![
             global_fee_recipient,
             global_pda,
             bonding_curve,
-            system_program,
-            token_program,
-            system_program,
-            rent,
             auth,
-            pump,
             mint_authority_pda,
             ata,
-            metadata,
             metadata_pda,
-            associated_token_program
         ]
     }
+
+
     /// Sells tokens back to the bonding curve in exchange for SOL
     ///
     /// # Arguments

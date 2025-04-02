@@ -1,3 +1,4 @@
+use crate::solana::utils::get_slot_and_blockhash;
 use anyhow::Result;
 use solana_client::client_error::ClientError;
 use solana_client::rpc_client::RpcClient;
@@ -17,9 +18,9 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::result::Result::Ok;
+use std::thread::sleep;
 use std::{thread, time::Duration};
-use tokio::time::sleep;
-use crate::solana::utils::get_slot_and_blockhash;
+use tokio::time;
 
 fn send_transaction(
     client: &RpcClient,
@@ -47,7 +48,11 @@ fn send_transaction(
 ///
 /// # Returns
 /// * `Result<Pubkey>` - The public key of the created LUT
-pub async fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pubkey>) -> Result<Pubkey> {
+pub async fn create_lut(
+    client: &RpcClient,
+    payer: &Keypair,
+    addresses: &Vec<Pubkey>,
+) -> Result<Pubkey> {
     // Get current slot and blockhash
     let (slot, blockhash) = get_slot_and_blockhash(&client).unwrap();
 
@@ -188,7 +193,22 @@ pub fn close_lut(client: &RpcClient, authority: &Keypair, lut_pubkey: Pubkey) {
 
     let ix = close_lookup_table(lut_pubkey, authority_pubkey, authority_pubkey);
 
+    let extend_lut_blockheight: (Hash, u64) = client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .unwrap();
+
     let tx = send_transaction(&client, blockhash, authority, &[ix]).unwrap();
 
     client.confirm_transaction(&tx).unwrap();
+
+    loop {
+        let last_hash: u64 = client
+            .get_block_height_with_commitment(CommitmentConfig::finalized())
+            .unwrap();
+        if last_hash > extend_lut_blockheight.1 + 2 {
+            break;
+        } else {
+            sleep(Duration::from_secs(1));
+        }
+    }
 }
