@@ -106,7 +106,7 @@ pub async fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pub
 
 
     println!("Sleeping...");
-    sleep(Duration::new(60, 0)).await;
+    sleep(Duration::new(30, 0)).await;
 
     Ok(lut_pubkey)
 }
@@ -120,7 +120,7 @@ fn extend_lut(
     println!("Addresses count: {:?}", addresses.len());
     let mut instructions: Vec<Instruction> = Vec::new();
 
-    let chunks: Vec<_> = addresses.chunks(25).collect();
+    let chunks: Vec<_> = addresses.chunks(30).collect();
 
     for chunk in chunks {
         let ix = extend_lookup_table(

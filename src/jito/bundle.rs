@@ -6,7 +6,7 @@ use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::VersionedTransaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 
 use std::{env, sync::Arc, thread::sleep};
@@ -73,7 +73,9 @@ pub async fn process_bundle(
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
 
-    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut).await.unwrap();
+    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
+        .await
+        .unwrap();
 
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
@@ -125,14 +127,13 @@ pub async fn process_bundle(
         addresses,
     };
 
-    let cloned_lut = address_lookup_table_account.clone();
+    let blockhash = client.get_latest_blockhash().unwrap();
 
-    let fund_tx = build_transaction(
-        &client,
+    let fund_tx = Transaction::new_signed_with_payer(
         &instructions,
-        vec![&admin_kp],
-        cloned_lut,
-        &admin_kp,
+        Some(&admin_kp.pubkey()),
+        &[&admin_kp],
+        blockhash,
     );
 
     let size: usize = bincode::serialized_size(&fund_tx).unwrap() as usize;
@@ -140,9 +141,7 @@ pub async fn process_bundle(
     println!("Size of transaction to fund wallets: {:?}", size);
 
     if size <= 1232 {
-        jito.submit_bundle(vec![fund_tx], mint.pubkey(), None)
-            .await
-            .unwrap();
+        jito.one_tx_bundle(fund_tx).await.unwrap();
     } else {
         // Calculate number of transactions needed based on size
         let num_transactions = (1232 as f64 / 1232.0).ceil() as usize;
