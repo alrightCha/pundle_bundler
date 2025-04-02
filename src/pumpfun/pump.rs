@@ -83,17 +83,6 @@ impl PumpFun {
         ata
     }
 
-    //TODO: Use this serialized to all accounts and send as single tx and wait for confirmation before proceeding with the buy
-    pub fn create_ata(&self, payer: &Pubkey, wallet: &Pubkey, mint: &Pubkey) -> Instruction {
-        let create_ata_ix = create_associated_token_account(
-            &payer, // Admin pays for account creation
-            wallet, // Wallet that will own the ATA
-            mint,
-            &pumpfun::constants::accounts::TOKEN_PROGRAM,
-        );
-        create_ata_ix
-    }
-
     /// Creates a new token with metadata by uploading metadata to IPFS and initializing on-chain accounts
     ///
     /// # Arguments

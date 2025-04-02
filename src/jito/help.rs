@@ -63,7 +63,7 @@ impl BundleTransactions {
 
         let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
-        let dev: Keypair = dev_keypair.insecure_clone();
+        let dev: Keypair = admin_keypair.insecure_clone();
         let payer: Arc<Keypair> = Arc::new(dev);
 
         let pumpfun_client = PumpFun::new(payer);
