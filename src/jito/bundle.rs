@@ -87,11 +87,11 @@ pub async fn process_bundle(
     pubkeys_for_lut.push(admin_kp.pubkey());
 
     //Adding tip account to lut
-    //pubkeys_for_lut.push(tip_account);
+    pubkeys_for_lut.push(tip_account);
 
     //Adding other addresses to lut
     let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
-    //pubkeys_for_lut.extend(extra_addresses);
+    pubkeys_for_lut.extend(extra_addresses);
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
 
@@ -124,6 +124,10 @@ pub async fn process_bundle(
         //Extend lut with addresses & attached token accounts
         let _ = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
     }
+
+    println!("Sleeping...");
+    sleep(Duration::from_secs(20));
+    println!("Back at it");
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     let admin_to_dev_ix: Instruction = transfer_ix(
@@ -172,16 +176,20 @@ pub async fn process_bundle(
 
     println!("Instructions length : {:?}", instructions.len());
 
+    let cloned_lut = address_lookup_table_account.clone();
+
     let fund_tx = build_transaction(
         &client,
         &instructions,
         vec![&admin_kp],
-        address_lookup_table_account.clone(),
+        cloned_lut,
         &admin_kp,
     );
 
     let size: usize = bincode::serialized_size(&fund_tx).unwrap() as usize;
 
+    println!("Size of transaction to fund wallets: {:?}", size); 
+    
     if size <= 1232 {
         jito.submit_bundle(vec![fund_tx], mint.pubkey(), None)
             .await
