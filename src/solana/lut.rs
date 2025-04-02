@@ -105,10 +105,6 @@ pub async fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pub
             .unwrap();
     }
 
-
-    println!("Sleeping...");
-    sleep(Duration::new(30, 0)).await;
-
     Ok(lut_pubkey)
 }
 
