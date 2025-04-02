@@ -143,7 +143,7 @@ pub fn extend_lut(
         CommitmentConfig::finalized(),  // Use finalized commitment
         RpcSendTransactionConfig {
             skip_preflight: true,  // Skip preflight to avoid false negatives
-            preflight_commitment: Some(CommitmentLevel::Finalized),
+            preflight_commitment: Some(CommitmentLevel::Processed),
             ..RpcSendTransactionConfig::default()
         },
     )?;
@@ -186,7 +186,7 @@ fn deactivate_lut(client: &RpcClient, authority: &Keypair, lut_pubkey: Pubkey) -
     let confirmation = client.confirm_transaction_with_spinner(
     &signature,
 &client.get_latest_blockhash()?,
-    CommitmentConfig::finalized(),
+    CommitmentConfig::processed(),
     ).unwrap();
 
     Ok(confirmation)
