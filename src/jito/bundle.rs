@@ -91,7 +91,6 @@ pub async fn process_bundle(
 
     //Adding other addresses to lut
     let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
-    pubkeys_for_lut.extend(extra_addresses);
 
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
@@ -109,9 +108,6 @@ pub async fn process_bundle(
 
     let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
     let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
-    let mut extend_lut_blockheight: (Hash, u64) = client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .unwrap();
 
     if num_txs > 1 {
         let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
@@ -124,26 +120,11 @@ pub async fn process_bundle(
                 extended_lut
             );
         }
-        extend_lut_blockheight = client
-            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-            .unwrap();
     } else {
         //Extend lut with addresses & attached token accounts
         let _ = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
     }
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
-
-    loop {
-        let last_hash: u64 = client
-            .get_block_height_with_commitment(CommitmentConfig::finalized())
-            .unwrap();
-        if last_hash > extend_lut_blockheight.1 {
-            break;
-        } else {
-            println!("Waiting...");
-            sleep(Duration::from_millis(500));
-        }
-    }
 
     let admin_to_dev_ix: Instruction = transfer_ix(
         &admin_kp.pubkey(),
