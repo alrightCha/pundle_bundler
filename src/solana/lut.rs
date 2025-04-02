@@ -60,6 +60,7 @@ pub async fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pub
     let rest = extend_ixs.split_off(1);
 
     let mut first: Vec<Instruction> = vec![priority_fee_ix.clone(), create_ix];
+
     first.extend(extend_ixs); //With split off is only 1 ix
 
     // First transaction creates the LUT
