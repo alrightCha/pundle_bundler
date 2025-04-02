@@ -154,7 +154,6 @@ impl HandlerManager {
                 keypairs_with_amount,
                 dev_keypair_with_amount,
                 &mint,
-                payload.requester_pubkey,
                 token_metadata,
             )
             .await

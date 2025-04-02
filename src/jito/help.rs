@@ -3,8 +3,7 @@ use crate::config::{BUFFER_AMOUNT, FEE_AMOUNT};
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::{build_transaction, load_keypair, test_transactions};
-use dotenv::dotenv;
+use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -17,7 +16,6 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use std::collections::HashSet;
-use std::env;
 use std::sync::Arc;
 
 //Sum up for FIRST BUNDLE : - can add tip ix for all transactions
@@ -43,17 +41,13 @@ pub struct BundleTransactions {
 
 impl BundleTransactions {
     pub fn new(
+        admin_keypair: Keypair,
         dev_keypair: Keypair,
         mint_keypair: &Keypair,
         address_lookup_table_account: AddressLookupTableAccount,
         others_with_amount: Vec<KeypairWithAmount>,
         jito_tip_account: Pubkey,
     ) -> Self {
-        dotenv().ok();
-        //Load admin keypair
-        let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
-        let admin_keypair = load_keypair(&admin_keypair_path).unwrap();
-
         let client = RpcClient::new(RPC_URL);
 
         let jito_rpc = RpcClient::new_with_commitment(
@@ -79,6 +73,8 @@ impl BundleTransactions {
             "Accounts in lut : {:?}",
             address_lookup_table_account.addresses
         );
+
+        println!("ADMIN: {:?}", admin_keypair.pubkey());
 
         Self {
             admin_keypair,
@@ -186,11 +182,6 @@ impl BundleTransactions {
     }
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
-        let new_dev = self.admin_keypair.insecure_clone();
-        let new_payer: Arc<Keypair> = Arc::new(new_dev);
-        let new_pump = PumpFun::new(new_payer);
-        self.pumpfun_client = new_pump;
-
         let mut txs: Vec<VersionedTransaction> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();

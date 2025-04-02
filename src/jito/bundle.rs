@@ -34,10 +34,10 @@ pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
     dev_keypair_with_amount: KeypairWithAmount,
     mint: &Keypair,
-    requester_pubkey: String,
     token_metadata: Create,
 ) -> Result<Pubkey, Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
+
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
     let admin_kp = load_keypair(&admin_keypair_path).unwrap();
 
@@ -50,27 +50,9 @@ pub async fn process_bundle(
 
     let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
-    let dev_keypair_path = format!(
-        "accounts/{}/{}/{}.json",
-        requester_pubkey,
-        mint.pubkey().to_string(),
-        dev_keypair_with_amount.keypair.pubkey()
-    );
-
-    let loaded_dev_keypair = load_keypair(&dev_keypair_path).unwrap();
-
-    let payer: Arc<Keypair> = Arc::new(loaded_dev_keypair);
+    let payer: Arc<Keypair> = Arc::new(admin_kp.insecure_clone());
 
     let pumpfun_client = PumpFun::new(payer);
-
-    println!("Creating lut with admin public key:  {}", admin_kp.pubkey());
-    println!("Keypairs with amount: {:?}", keypairs_with_amount);
-
-    println!(
-        "Admin keypair balance: {}",
-        client.get_balance(&admin_kp.pubkey()).unwrap_or(0)
-    );
-    println!("Attempting to create LUT...");
 
     let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) =
         create_lut(&client, &admin_kp).unwrap();
@@ -81,7 +63,6 @@ pub async fn process_bundle(
     while retries > 0 {
         match verify_lut_ready(&client, &lut.0) {
             Ok(true) => {
-                println!("LUT is ready");
                 break;
             }
             Ok(false) => {
@@ -103,6 +84,8 @@ pub async fn process_bundle(
 
     let tip_account: Pubkey = jito.get_tip_account().await;
 
+    pubkeys_for_lut.push(admin_kp.pubkey());
+
     //Adding tip account to lut
     pubkeys_for_lut.push(tip_account);
 
@@ -110,7 +93,6 @@ pub async fn process_bundle(
     let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
     pubkeys_for_lut.extend(extra_addresses);
 
-    pubkeys_for_lut.push(admin_kp.pubkey());
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
 
@@ -147,8 +129,7 @@ pub async fn process_bundle(
             .unwrap();
     } else {
         //Extend lut with addresses & attached token accounts
-        let extended_lut = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
-        println!("LUT extended with addresses: {:?}", extended_lut);
+        let _ = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
     }
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
@@ -156,18 +137,13 @@ pub async fn process_bundle(
         let last_hash: u64 = client
             .get_block_height_with_commitment(CommitmentConfig::finalized())
             .unwrap();
-        if last_hash > extend_lut_blockheight.1 + 2 {
+        if last_hash > extend_lut_blockheight.1 {
             break;
         } else {
             println!("Waiting...");
             sleep(Duration::from_millis(500));
         }
     }
-
-    println!(
-        "Amount of lamports to transfer to dev: {}",
-        dev_keypair_with_amount.amount
-    );
 
     let admin_to_dev_ix: Instruction = transfer_ix(
         &admin_kp.pubkey(),
@@ -202,13 +178,6 @@ pub async fn process_bundle(
     instructions.push(jito_tip_ix);
 
     println!("LUT address: {:?}", lut.0);
-    println!(
-        "Amounts to send : {:?}",
-        keypairs_with_amount
-            .iter()
-            .map(|keypair| keypair.amount)
-            .collect::<Vec<u64>>()
-    );
 
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
@@ -220,24 +189,23 @@ pub async fn process_bundle(
 
     println!("Instructions length : {:?}", instructions.len());
 
-    // Create transaction with all instructions
-    let mut transaction = Transaction::new_with_payer(&instructions, Some(&admin_kp.pubkey()));
+    let fund_tx = build_transaction(
+        &client,
+        &instructions,
+        vec![&admin_kp],
+        lut_account.clone(),
+        &admin_kp,
+    );
 
-    // Get recent blockhash
-    let recent_blockhash = client.get_latest_blockhash()?;
+    let size: usize = bincode::serialized_size(&fund_tx).unwrap() as usize;
 
-    // Sign Transaction
-    transaction.sign(&[&admin_kp], recent_blockhash);
-
-    let tx_size: usize = bincode::serialized_size(&transaction).unwrap() as usize;
-
-    println!("Transfer Transaction size: {:?}", tx_size);
-    let admin_balance = client.get_balance(&admin_kp.pubkey()).unwrap();
-    println!("Admin balance: {:?}", admin_balance);
-
-    if tx_size > 1232 {
+    if size <= 1232 {
+        jito.submit_bundle(vec![fund_tx], mint.pubkey(), None)
+            .await
+            .unwrap();
+    } else {
         // Calculate number of transactions needed based on size
-        let num_transactions = (tx_size as f64 / 1232.0).ceil() as usize;
+        let num_transactions = (1232 as f64 / 1232.0).ceil() as usize;
         let instructions_per_tx = instructions.len() / num_transactions;
 
         // Split instructions into chunks
@@ -266,9 +234,6 @@ pub async fn process_bundle(
         }
         test_transactions(&client, &txs).await;
         let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
-    } else {
-        //Sending transaction to fund wallets from admin.
-        let _ = jito.one_tx_bundle(transaction).await.unwrap();
     }
 
     println!("Transaction built");
@@ -284,54 +249,9 @@ pub async fn process_bundle(
             .unwrap();
     }
 
-    //Step 4: Create and extend lut for the bundle
-    let other_balances = keypairs_with_amount
-        .iter()
-        .map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap())
-        .collect::<Vec<u64>>();
-
-    println!("Other balances: {:?}", other_balances);
-
-    let balances_to_buy = other_balances
-        .iter()
-        .map(|balance| balance - 1_900_000)
-        .collect::<Vec<u64>>();
-    println!("Balances to buy: {:?}", balances_to_buy);
-
-    // Print difference between intended buy amount and actual balance
-    for (i, keypair) in keypairs_with_amount.iter().enumerate() {
-        let actual_balance = other_balances[i];
-        let intended_amount = keypair.amount;
-        println!(
-            "Wallet {}: Intended buy amount: {}, Actual balance: {}, Difference: {}",
-            keypair.keypair.pubkey(),
-            intended_amount,
-            actual_balance,
-            if actual_balance >= intended_amount {
-                actual_balance - intended_amount
-            } else {
-                println!("WARNING: Actual balance less than intended buy amount!");
-                intended_amount - actual_balance
-            }
-        );
-    }
-    println!("LUT ACCOUNT: {:?}", lut_account.key.to_string());
-    println!("LUT : {:?}", lut.0);
-
-    match verify_lut_ready(&client, &lut_account.key) {
-        Ok(true) => {
-            println!("LUT is ready");
-        }
-        Ok(false) => {
-            println!("LUT is not Ready...");
-        }
-        Err(e) => {
-            println!("Error verifying LUT: {:?}", e);
-        }
-    }
-
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction
     let mut txs_builder: BundleTransactions = BundleTransactions::new(
+        admin_kp,
         dev_keypair_with_amount.keypair,
         mint,
         lut_account,
