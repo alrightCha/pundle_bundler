@@ -59,8 +59,6 @@ pub async fn process_bundle(
     pubkeys_for_lut.extend(extra_addresses);
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
-    //Adding tip account to lut
-    pubkeys_for_lut.push(tip_account);
 
     for keypair in keypairs_with_amount.iter() {
         pubkeys_for_lut.push(keypair.keypair.pubkey());
