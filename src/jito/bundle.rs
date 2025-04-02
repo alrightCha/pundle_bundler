@@ -182,8 +182,10 @@ pub async fn process_bundle(
     let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
-    let lut_account: AddressLookupTableAccount = AddressLookupTableAccount {
-        key: lut.0,
+    println!("Address lookup table: {:?}", address_lookup_table);
+
+    let address_lookup_table_account = AddressLookupTableAccount {
+        key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
@@ -193,7 +195,7 @@ pub async fn process_bundle(
         &client,
         &instructions,
         vec![&admin_kp],
-        lut_account.clone(),
+        address_lookup_table_account.clone(),
         &admin_kp,
     );
 
@@ -228,7 +230,7 @@ pub async fn process_bundle(
         let mut txs: Vec<VersionedTransaction> = Vec::new();
         // Build and send each transaction
         for chunk in chunks {
-            let lut: AddressLookupTableAccount = lut_account.clone();
+            let lut: AddressLookupTableAccount = address_lookup_table_account.clone();
             let tx = build_transaction(&client, &chunk, vec![&admin_kp], lut, &admin_kp);
             txs.push(tx);
         }
@@ -254,7 +256,7 @@ pub async fn process_bundle(
         admin_kp,
         dev_keypair_with_amount.keypair,
         mint,
-        lut_account,
+        lut_pubkey,
         keypairs_with_amount,
         tip_account,
     );

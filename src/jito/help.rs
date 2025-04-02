@@ -9,6 +9,7 @@ use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
+    address_lookup_table::state::AddressLookupTable,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -44,7 +45,7 @@ impl BundleTransactions {
         admin_keypair: Keypair,
         dev_keypair: Keypair,
         mint_keypair: &Keypair,
-        address_lookup_table_account: AddressLookupTableAccount,
+        lut_pubkey: Pubkey,
         others_with_amount: Vec<KeypairWithAmount>,
         jito_tip_account: Pubkey,
     ) -> Self {
@@ -64,6 +65,14 @@ impl BundleTransactions {
 
         let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
+
+        let raw_account = client.get_account(&lut_pubkey).unwrap();
+        let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+
+        let address_lookup_table_account = AddressLookupTableAccount {
+            key: lut_pubkey,
+            addresses: address_lookup_table.addresses.to_vec(),
+        };
 
         println!(
             "Creating BundleTransactions Class with lut: {:?}",
