@@ -99,6 +99,7 @@ pub fn build_transaction(
     }
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
+    
     let message = Message::try_compile(&payer.pubkey(), ixes, &[lut], blockhash).unwrap();
 
     // Compile the message with the payer's public key

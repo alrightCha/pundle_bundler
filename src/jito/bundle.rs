@@ -1,30 +1,24 @@
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
-    account::Account,
-    address_lookup_table::{state::AddressLookupTable, AddressLookupTableAccount},
-    hash::Hash,
+    address_lookup_table::{state::LOOKUP_TABLE_META_SIZE, AddressLookupTableAccount},
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::{Transaction, VersionedTransaction},
+    transaction::VersionedTransaction,
 };
 
 use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
 use super::help::BundleTransactions;
+use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::{
-    lut::{create_lut, extend_lut, verify_lut_ready},
+    lut::create_lut,
     utils::{build_transaction, load_keypair, transfer_ix},
-};
-use crate::{
-    config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
-    solana::lut::extend_lut_size,
 };
 use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
@@ -54,32 +48,6 @@ pub async fn process_bundle(
 
     let pumpfun_client = PumpFun::new(payer);
 
-    let lut: (solana_sdk::pubkey::Pubkey, solana_sdk::signature::Signature) =
-        create_lut(&client, &admin_kp).unwrap();
-
-    let lut_pubkey = lut.0;
-
-    let mut retries = 5;
-    while retries > 0 {
-        match verify_lut_ready(&client, &lut.0) {
-            Ok(true) => {
-                break;
-            }
-            Ok(false) => {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                retries -= 1;
-            }
-            Err(e) => {
-                println!("Error verifying LUT: {:?}", e);
-                return Err(Box::new(e));
-            }
-        }
-    }
-
-    if retries == 0 {
-        return Err("LUT not ready after maximum retries".into());
-    }
-
     let mut pubkeys_for_lut: Vec<Pubkey> = Vec::new();
 
     let tip_account: Pubkey = jito.get_tip_account().await;
@@ -106,28 +74,8 @@ pub async fn process_bundle(
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
 
-    let extend_tx_size = extend_lut_size(&client, &admin_kp, lut_pubkey, &pubkeys_for_lut).unwrap();
-    let num_txs = (extend_tx_size + 1231) / 1232; // Round up division
+    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut).unwrap();
 
-    if num_txs > 1 {
-        let chunk_size = (pubkeys_for_lut.len() + num_txs - 1) / num_txs; // Round up division
-        for (i, chunk) in pubkeys_for_lut.chunks(chunk_size).enumerate() {
-            let extended_lut = extend_lut(&client, &admin_kp, lut.0, &chunk.to_vec()).unwrap();
-            println!(
-                "LUT extended part {}/{}: {:?}",
-                i + 1,
-                num_txs,
-                extended_lut
-            );
-        }
-    } else {
-        //Extend lut with addresses & attached token accounts
-        let _ = extend_lut(&client, &admin_kp, lut.0, &pubkeys_for_lut).unwrap();
-    }
-
-    println!("Sleeping...");
-    sleep(Duration::from_secs(20));
-    println!("Back at it");
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     let admin_to_dev_ix: Instruction = transfer_ix(
@@ -162,16 +110,20 @@ pub async fn process_bundle(
     instructions.extend(admin_to_keypair_ixs);
     instructions.push(jito_tip_ix);
 
-    println!("LUT address: {:?}", lut.0);
+    let account_data = client.get_account_data(&lut_pubkey).unwrap();
 
-    let raw_account: Account = client.get_account(&lut_pubkey).unwrap();
-    let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+    let addresses: Vec<Pubkey> = account_data[LOOKUP_TABLE_META_SIZE..]
+        .chunks(32)
+        .map(|chunk| {
+            let mut array = [0u8; 32];
+            array.copy_from_slice(chunk);
+            Pubkey::new_from_array(array)
+        })
+        .collect();
 
-    println!("Address lookup table: {:?}", address_lookup_table);
-
-    let address_lookup_table_account = AddressLookupTableAccount {
+    let address_lookup_table_account: AddressLookupTableAccount = AddressLookupTableAccount {
         key: lut_pubkey,
-        addresses: address_lookup_table.addresses.to_vec(),
+        addresses,
     };
 
     println!("Instructions length : {:?}", instructions.len());
@@ -188,8 +140,8 @@ pub async fn process_bundle(
 
     let size: usize = bincode::serialized_size(&fund_tx).unwrap() as usize;
 
-    println!("Size of transaction to fund wallets: {:?}", size); 
-    
+    println!("Size of transaction to fund wallets: {:?}", size);
+
     if size <= 1232 {
         jito.submit_bundle(vec![fund_tx], mint.pubkey(), None)
             .await
@@ -245,7 +197,7 @@ pub async fn process_bundle(
         admin_kp,
         dev_keypair_with_amount.keypair,
         mint,
-        lut_pubkey,
+        address_lookup_table_account,
         keypairs_with_amount,
         tip_account,
     );
