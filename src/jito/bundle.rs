@@ -61,7 +61,7 @@ pub async fn process_bundle(
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
     //Adding tip account to lut
     pubkeys_for_lut.push(tip_account);
-    
+
     for keypair in keypairs_with_amount.iter() {
         //pubkeys_for_lut.push(keypair.keypair.pubkey());
         let ata_pubkey = pumpfun_client.get_ata(&keypair.keypair.pubkey(), &mint.pubkey());
@@ -109,6 +109,9 @@ pub async fn process_bundle(
     instructions.extend(admin_to_keypair_ixs);
     instructions.push(jito_tip_ix);
 
+    println!("Sleeping...");
+    sleep(Duration::new(60, 0));
+
     let account_data = client.get_account_data(&lut_pubkey).unwrap();
 
     let addresses: Vec<Pubkey> = account_data[LOOKUP_TABLE_META_SIZE..]
@@ -124,8 +127,6 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses,
     };
-
-    println!("Instructions length : {:?}", instructions.len());
 
     let cloned_lut = address_lookup_table_account.clone();
 
