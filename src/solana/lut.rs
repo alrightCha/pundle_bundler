@@ -120,7 +120,7 @@ fn extend_lut(
     println!("Addresses count: {:?}", addresses.len());
     let mut instructions: Vec<Instruction> = Vec::new();
 
-    let chunks: Vec<_> = addresses.chunks(29).collect();
+    let chunks: Vec<_> = addresses.chunks(27).collect();
 
     for chunk in chunks {
         let ix = extend_lookup_table(
