@@ -41,12 +41,20 @@ impl JitoBundle {
         }
     }
 
-    pub async fn get_tip_ix(&self, deployer_pubkey: Pubkey) -> Result<Instruction> {
-        let random_tip_account = self.jito_sdk.get_random_tip_account().await?;
-        let jito_tip_account = Pubkey::from_str(&random_tip_account)?;
+    pub async fn get_tip_ix(&self, deployer_pubkey: Pubkey, tip_account: Option<Pubkey>) -> Result<Instruction> {
+        let jito_tip_account: Pubkey = match tip_account {
+            Some(tip_account) => tip_account,
+            None => self.get_tip_account().await
+        };
+
         let jito_tip_ix =
             system_instruction::transfer(&deployer_pubkey, &jito_tip_account, self.jito_tip_amount);
         Ok(jito_tip_ix)
+    }
+
+    pub async fn get_tip_account(&self) -> Pubkey {
+        let random_tip_account = self.jito_sdk.get_random_tip_account().await.unwrap();
+        Pubkey::from_str(&random_tip_account).unwrap()
     }
 
     pub async fn one_tx_sell(&self, transaction: Transaction) -> Result<String> {

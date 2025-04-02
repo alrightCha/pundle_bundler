@@ -131,7 +131,7 @@ pub async fn sell_all_txs(
                 for ix in current_tx_ixs.iter() {
                     maybe_with_tip.push(ix.clone());
                 }
-                let tip_ix = jito.get_tip_ix(admin_keypair.pubkey()).await.unwrap();
+                let tip_ix = jito.get_tip_ix(admin_keypair.pubkey(), None).await.unwrap();
                 maybe_with_tip.push(tip_ix.clone());
                 let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
 
@@ -158,7 +158,7 @@ pub async fn sell_all_txs(
     }
 
     if current_tx_ixs.len() > 0 {
-        let tip_ix = jito.get_tip_ix(admin_keypair.pubkey()).await.unwrap();
+        let tip_ix = jito.get_tip_ix(admin_keypair.pubkey(), None).await.unwrap();
         let mut maybe_ixs: Vec<Instruction> = Vec::new();
         for ix in current_tx_ixs.iter() {
             maybe_ixs.push(ix.clone());

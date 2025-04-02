@@ -101,6 +101,15 @@ pub async fn process_bundle(
 
     let mut pubkeys_for_lut: Vec<Pubkey> = Vec::new();
 
+    let tip_account: Pubkey = jito.get_tip_account().await;
+
+    //Adding tip account to lut
+    pubkeys_for_lut.push(tip_account);
+
+    //Adding other addresses to lut
+    let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
+    pubkeys_for_lut.extend(extra_addresses);
+
     pubkeys_for_lut.push(admin_kp.pubkey());
     pubkeys_for_lut.push(mint.pubkey());
     pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
@@ -174,7 +183,10 @@ pub async fn process_bundle(
         })
         .collect();
 
-    let jito_tip_ix = jito.get_tip_ix(admin_kp.pubkey()).await.unwrap();
+    let jito_tip_ix = jito
+        .get_tip_ix(admin_kp.pubkey(), Some(tip_account))
+        .await
+        .unwrap();
 
     let priority_fee_amount = 7_000; // 0.000007 SOL
                                      // Create priority fee instruction
@@ -274,7 +286,9 @@ pub async fn process_bundle(
         .iter()
         .map(|keypair| client.get_balance(&keypair.keypair.pubkey()).unwrap())
         .collect::<Vec<u64>>();
+
     println!("Other balances: {:?}", other_balances);
+
     let balances_to_buy = other_balances
         .iter()
         .map(|balance| balance - 1_900_000)
@@ -319,6 +333,7 @@ pub async fn process_bundle(
         mint,
         lut_account,
         keypairs_with_amount,
+        tip_account
     );
 
     //Submitting first bundle

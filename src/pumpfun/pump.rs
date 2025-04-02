@@ -10,12 +10,11 @@ use anchor_client::{
         system_instruction::transfer,
     },
 };
-use pumpfun_cpi::instruction::{Buy, Create, Sell};
-
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
+use pumpfun_cpi::instruction::{Buy, Create, Sell};
 
 use crate::config::RPC_URL;
 use crate::params::PoolInformation;
@@ -107,7 +106,7 @@ impl PumpFun {
     ///
     /// Returns the transaction signature if successful, or a ClientError if the operation fails
     pub fn create_instruction(&self, mint: &Keypair, args: Create) -> Instruction {
-        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(&mint.pubkey()).unwrap();
+        let bonding_curve: Pubkey = self.get_bonding_curve_pda(&mint.pubkey()).unwrap();
         Instruction::new_with_bytes(
             pumpfun::constants::accounts::PUMPFUN,
             &args.data(),
@@ -119,7 +118,7 @@ impl PumpFun {
                     get_associated_token_address(&bonding_curve, &mint.pubkey()),
                     false,
                 ),
-                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new_readonly(self.get_global_pda(), false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::MPL_TOKEN_METADATA, false),
                 AccountMeta::new(Self::get_metadata_pda(&mint.pubkey()), false),
                 AccountMeta::new(self.payer.pubkey(), true),
@@ -182,6 +181,7 @@ impl PumpFun {
         // Add ata instruction or get acc if available
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
         println!("ATA: {:?}", ata);
+
         if self.rpc.get_account(&ata).await.is_err() {
             println!("Passing create ATA instruction");
             let create_ata_ix = create_associated_token_account(
@@ -193,7 +193,8 @@ impl PumpFun {
             instructions.push(create_ata_ix);
         }
 
-        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
+        let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
+
         let args = Buy {
             _amount: buy_amount,
             _max_sol_cost: amount_sol,
@@ -202,7 +203,7 @@ impl PumpFun {
             pumpfun::constants::accounts::PUMPFUN,
             &args.data(),
             vec![
-                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new_readonly(self.get_global_pda(), false),
                 AccountMeta::new(global_account.fee_recipient, false),
                 AccountMeta::new_readonly(*mint, false),
                 AccountMeta::new(bonding_curve, false),
@@ -221,6 +222,37 @@ impl PumpFun {
         Ok(instructions)
     }
 
+    pub async fn get_addresse_for_lut(&self, mint: &Pubkey) -> Vec<Pubkey> {
+        let global_fee_recipient: Pubkey = self.get_global_account().await.unwrap().fee_recipient;
+        let global_pda: Pubkey = self.get_global_pda();
+        let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
+        let system_program: Pubkey = pumpfun::constants::accounts::SYSTEM_PROGRAM;
+        let token_program: Pubkey = pumpfun::constants::accounts::TOKEN_PROGRAM;
+        let rent: Pubkey = pumpfun::constants::accounts::RENT;
+        let auth: Pubkey = pumpfun::constants::accounts::EVENT_AUTHORITY;
+        let pump: Pubkey = pumpfun::constants::accounts::PUMPFUN;
+        let mint_authority_pda: Pubkey = Self::get_mint_authority_pda(); 
+        let ata: Pubkey = get_associated_token_address(&bonding_curve, &mint); 
+        let metadata: Pubkey = pumpfun::constants::accounts::MPL_TOKEN_METADATA; 
+        let metadata_pda: Pubkey = Self::get_metadata_pda(&mint); 
+        let associated_token_program: Pubkey = pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM; 
+        vec![
+            global_fee_recipient,
+            global_pda,
+            bonding_curve,
+            system_program,
+            token_program,
+            system_program,
+            rent,
+            auth,
+            pump,
+            mint_authority_pda,
+            ata,
+            metadata,
+            metadata_pda,
+            associated_token_program
+        ]
+    }
     /// Sells tokens back to the bonding curve in exchange for SOL
     ///
     /// # Arguments
@@ -274,7 +306,7 @@ impl PumpFun {
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(2_000_000);
         instructions.push(priority_fee_ix);
 
-        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
+        let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
 
         let args = Sell {
             _amount: amount,
@@ -285,7 +317,7 @@ impl PumpFun {
             pumpfun::constants::accounts::PUMPFUN,
             &args.data(),
             vec![
-                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new_readonly(self.get_global_pda(), false),
                 AccountMeta::new(global_account.fee_recipient, false),
                 AccountMeta::new_readonly(*mint, false),
                 AccountMeta::new(bonding_curve, false),
@@ -328,7 +360,7 @@ impl PumpFun {
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
 
         if balance_u64 < 1000 {
-            return Err(pumpfun::error::ClientError::InsufficientFunds)
+            return Err(pumpfun::error::ClientError::InsufficientFunds);
         }
 
         let global_account = self.get_global_account().await?;
@@ -347,7 +379,7 @@ impl PumpFun {
 
         let mut instructions: Vec<Instruction> = Vec::new();
 
-        let bonding_curve: Pubkey = Self::get_bonding_curve_pda(mint).unwrap();
+        let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
 
         let args = Sell {
             _amount: balance_u64,
@@ -358,7 +390,7 @@ impl PumpFun {
             pumpfun::constants::accounts::PUMPFUN,
             &args.data(),
             vec![
-                AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
+                AccountMeta::new_readonly(self.get_global_pda(), false),
                 AccountMeta::new(global_account.fee_recipient, false),
                 AccountMeta::new_readonly(*mint, false),
                 AccountMeta::new(bonding_curve, false),
@@ -417,7 +449,7 @@ impl PumpFun {
     pub async fn get_global_account(
         &self,
     ) -> Result<pumpfun::accounts::GlobalAccount, pumpfun::error::ClientError> {
-        let global: Pubkey = Self::get_global_pda();
+        let global: Pubkey = self.get_global_pda();
 
         let account = self
             .rpc
@@ -440,7 +472,7 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns the PDA public key derived from the GLOBAL_SEED
-    pub fn get_global_pda() -> Pubkey {
+    pub fn get_global_pda(&self) -> Pubkey {
         let seeds: &[&[u8]; 1] = &[pumpfun::constants::seeds::GLOBAL_SEED];
         let program_id: &Pubkey = &pumpfun::cpi::ID;
         Pubkey::find_program_address(seeds, program_id).0
@@ -455,7 +487,7 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns Some(PDA) if derivation succeeds, or None if it fails
-    pub fn get_bonding_curve_pda(mint: &Pubkey) -> Option<Pubkey> {
+    pub fn get_bonding_curve_pda(&self, mint: &Pubkey) -> Option<Pubkey> {
         let seeds: &[&[u8]; 2] = &[pumpfun::constants::seeds::BONDING_CURVE_SEED, mint.as_ref()];
         let program_id: &Pubkey = &pumpfun::cpi::ID;
         let pda: Option<(Pubkey, u8)> = Pubkey::try_find_program_address(seeds, program_id);
@@ -475,7 +507,7 @@ impl PumpFun {
         &self,
         mint: &Pubkey,
     ) -> Result<pumpfun::accounts::BondingCurveAccount, pumpfun::error::ClientError> {
-        let bonding_curve_pda = Self::get_bonding_curve_pda(mint)
+        let bonding_curve_pda = self.get_bonding_curve_pda(mint)
             .ok_or(pumpfun::error::ClientError::BondingCurveNotFound)?;
 
         let account = self

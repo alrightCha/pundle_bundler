@@ -237,7 +237,7 @@ impl HandlerManager {
             let blockhash = client.get_latest_blockhash().unwrap();
 
             let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
-            let tip_ix = jito.get_tip_ix(keypair.pubkey()).await.unwrap();
+            let tip_ix = jito.get_tip_ix(keypair.pubkey(), None).await.unwrap();
 
             let mut instructions: Vec<Instruction> = Vec::new();
             instructions.extend(sell_ixs);
