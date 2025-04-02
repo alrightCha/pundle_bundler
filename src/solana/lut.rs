@@ -47,7 +47,7 @@ fn send_transaction(
 ///
 /// # Returns
 /// * `Result<Pubkey>` - The public key of the created LUT
-pub fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pubkey>) -> Result<Pubkey> {
+pub async fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pubkey>) -> Result<Pubkey> {
     // Get current slot and blockhash
     let (slot, blockhash) = get_slot_and_blockhash(&client).unwrap();
 
@@ -106,7 +106,7 @@ pub fn create_lut(client: &RpcClient, payer: &Keypair, addresses: &Vec<Pubkey>) 
 
 
     println!("Sleeping...");
-    sleep(Duration::new(60, 0));
+    sleep(Duration::new(60, 0)).await;
 
     Ok(lut_pubkey)
 }

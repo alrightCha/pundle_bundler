@@ -73,7 +73,7 @@ pub async fn process_bundle(
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
 
-    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut).unwrap();
+    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut).await.unwrap();
 
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
