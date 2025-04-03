@@ -69,6 +69,14 @@ impl PumpFun {
         }
     }
 
+    pub async fn is_token_live(&self, mint: &Pubkey) -> bool {
+        let bonding_curve_account = self.get_bonding_curve_account(mint).await;
+        match bonding_curve_account {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
     //Gets or creates an associated token account for a keypair TODO: Use this serialized to all accounts and pass it to the lut
     pub fn get_ata(&self, pubkey: &Pubkey, mint: &Pubkey) -> Pubkey {
         let ata: Pubkey = get_associated_token_address(&pubkey, mint);

@@ -49,7 +49,6 @@ pub struct BundleTransactions {
     address_lookup_table_account: AddressLookupTableAccount,
     keypairs_to_treat: Vec<KeypairWithAmount>,
     jito_tip_account: Pubkey,
-    first_bundle_signature: Option<Signature>,
 }
 
 impl BundleTransactions {
@@ -98,8 +97,7 @@ impl BundleTransactions {
             jito,
             address_lookup_table_account,
             keypairs_to_treat,
-            jito_tip_account,
-            first_bundle_signature: None,
+            jito_tip_account
         }
     }
     //Separate logic of checking txs size into separate function
@@ -174,8 +172,6 @@ impl BundleTransactions {
         }
 
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
-
-        self.first_bundle_signature = Some(*first_tx.get_signature());
 
         transactions.push(first_tx);
 
@@ -282,18 +278,6 @@ impl BundleTransactions {
             }
         }
         transactions
-    }
-
-    pub fn is_mint_tx_processed(&self) -> bool {
-        if let Some(tx) = self.first_bundle_signature {
-            let confirmation = self
-                .client
-                .confirm_transaction_with_commitment(&tx, CommitmentConfig::processed())
-                .unwrap();
-            confirmation.value
-        } else {
-            false
-        }
     }
 
     pub fn has_delayed_bundle(&mut self) -> bool {

@@ -211,34 +211,32 @@ pub async fn process_bundle(
         let jito = JitoBundle::new(rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
         tokio::spawn(async move {
-            let processed = txs_builder.is_mint_tx_processed();
-            if processed {
-                let late_txs = txs_builder.collect_rest_txs().await;
-                let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
-                    late_txs.chunks(5).map(|c| c.to_vec()).collect();
+            let start_time = std::time::Instant::now();
 
-                print!("We received {:?} late bundles", late_txs_chunks.len());
+            loop {
+                if start_time.elapsed() > Duration::from_secs(120) {
+                    println!("Timeout reached after 2 minutes, killing process");
+                    return;
+                }
 
-                for chunk in late_txs_chunks {
-                    let mut retries = 0;
-                    let max_retries = 3;
-                    loop {
-                        match jito.submit_bundle(chunk.clone(), mint_pubkey, Some(&pumpfun_client)).await {
-                            Ok(result) => {
-                                let _ = result;
-                                break;
-                            }
-                            Err(e) => {
-                                if retries >= max_retries {
-                                    eprintln!("Failed to submit bundle after {} retries: {}", max_retries, e);
-                                    break;
-                                }
-                                retries += 1;
-                                eprintln!("Bundle submission failed, retrying ({}/{}): {}", retries, max_retries, e);
-                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                            }
-                        }
+                let live = pumpfun_client.is_token_live(&mint_pubkey).await;
+                if live {
+                    let late_txs = txs_builder.collect_rest_txs().await;
+                    let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
+                        late_txs.chunks(5).map(|c| c.to_vec()).collect();
+
+                    print!("We received {:?} late bundles", late_txs_chunks.len());
+
+                    for chunk in late_txs_chunks {
+                        // Only send first chunk for testing
+                        let _ = jito
+                            .submit_bundle(chunk, mint_pubkey, Some(&pumpfun_client))
+                            .await
+                            .unwrap();
                     }
+                    break;
+                } else {
+                    sleep(Duration::from_millis(100));
                 }
             }
         });
