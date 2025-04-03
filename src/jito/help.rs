@@ -1,11 +1,16 @@
 use super::jito::JitoBundle;
-use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, MAX_BUYERS_FIRST_BUNDLE, FEE_AMOUNT, BUFFER_AMOUNT, MAX_BUYERS_FIRST_TX};
+use crate::config::{
+    BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_BUYERS_FIRST_BUNDLE, MAX_BUYERS_FIRST_TX,
+    MAX_RETRIES, RPC_URL,
+};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
-use solana_client::rpc_client::RpcClient;
+use solana_client::rpc_client::{RpcClient, SerializableTransaction};
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::signature::Signature;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
     instruction::Instruction,
@@ -44,6 +49,7 @@ pub struct BundleTransactions {
     address_lookup_table_account: AddressLookupTableAccount,
     keypairs_to_treat: Vec<KeypairWithAmount>,
     jito_tip_account: Pubkey,
+    first_bundle_signature: Option<Signature>,
 }
 
 impl BundleTransactions {
@@ -93,6 +99,7 @@ impl BundleTransactions {
             address_lookup_table_account,
             keypairs_to_treat,
             jito_tip_account,
+            first_bundle_signature: None,
         }
     }
     //Separate logic of checking txs size into separate function
@@ -167,11 +174,19 @@ impl BundleTransactions {
         }
 
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
+
+        self.first_bundle_signature = Some(*first_tx.get_signature());
+
         transactions.push(first_tx);
 
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
 
-        for (index, buyer) in self.keypairs_to_treat.iter().skip(MAX_BUYERS_FIRST_TX).enumerate() {
+        for (index, buyer) in self
+            .keypairs_to_treat
+            .iter()
+            .skip(MAX_BUYERS_FIRST_TX)
+            .enumerate()
+        {
             println!(
                 "INDEX: {:?} FOR PUBKEY: {:?}",
                 index,
@@ -228,7 +243,12 @@ impl BundleTransactions {
         //Adding all instructions into array to treat
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
 
-        for (index, keypair) in self.keypairs_to_treat.iter().skip(MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX).enumerate() {
+        for (index, keypair) in self
+            .keypairs_to_treat
+            .iter()
+            .skip(MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX)
+            .enumerate()
+        {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
                 .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
@@ -246,8 +266,10 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
-            else if index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1 {
-                println!("Adding tip here"); 
+            else if index
+                == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1
+            {
+                println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
                 transactions.push(new_tx);
@@ -262,8 +284,21 @@ impl BundleTransactions {
         transactions
     }
 
+    pub fn is_mint_tx_processed(&self) -> bool {
+        if let Some(tx) = self.first_bundle_signature {
+            let confirmation = self
+                .client
+                .confirm_transaction_with_commitment(&tx, CommitmentConfig::processed())
+                .unwrap();
+            confirmation.value
+        } else {
+            false
+        }
+    }
+
     pub fn has_delayed_bundle(&mut self) -> bool {
-        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 // In total we can get 23 buys + dev buy for first bundle
+        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1
+        // In total we can get 23 buys + dev buy for first bundle
     }
 
     fn get_tx(&self, ixs: &Vec<Instruction>, with_dev: bool) -> VersionedTransaction {
@@ -281,7 +316,7 @@ impl BundleTransactions {
             payer,
         );
         let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-        println!("TX SIZE: {:?}, instruction count: {:?}", size,ixs.len()); // - 1 for create + - 1 for fee in others, if more -> jito tip ix
+        println!("TX SIZE: {:?}, instruction count: {:?}", size, ixs.len()); // - 1 for create + - 1 for fee in others, if more -> jito tip ix
         tx
     }
 

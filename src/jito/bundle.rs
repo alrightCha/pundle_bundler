@@ -1,6 +1,7 @@
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::signature::Signature;
 use solana_sdk::{
     address_lookup_table::{state::LOOKUP_TABLE_META_SIZE, AddressLookupTableAccount},
     instruction::Instruction,
@@ -22,7 +23,7 @@ use crate::solana::{
 };
 use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
-use solana_client::rpc_client::RpcClient;
+use solana_client::rpc_client::{RpcClient, SerializableTransaction};
 
 pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -145,7 +146,6 @@ pub async fn process_bundle(
         let instructions_per_tx = 8;
         let num_transactions = (instructions.len() / instructions_per_tx) as usize;
 
-
         // Split instructions into chunks
         let mut chunks: Vec<Vec<Instruction>> = Vec::new();
         let mut start = 0;
@@ -211,31 +211,34 @@ pub async fn process_bundle(
         let jito = JitoBundle::new(rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
         tokio::spawn(async move {
-            let start_time = std::time::Instant::now();
+            let processed = txs_builder.is_mint_tx_processed();
+            if processed {
+                let late_txs = txs_builder.collect_rest_txs().await;
+                let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
+                    late_txs.chunks(5).map(|c| c.to_vec()).collect();
 
-            loop {
-                if start_time.elapsed() > Duration::from_secs(120) {
-                    println!("Timeout reached after 2 minutes, killing process");
-                    return;
-                }
-                let live = pumpfun_client.is_token_live(&mint_pubkey).await;
-                if live {
-                    let late_txs = txs_builder.collect_rest_txs().await;
-                    let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
-                        late_txs.chunks(5).map(|c| c.to_vec()).collect();
+                print!("We received {:?} late bundles", late_txs_chunks.len());
 
-                    print!("We received {:?} late bundles", late_txs_chunks.len());
-
-                    for chunk in late_txs_chunks {
-                        // Only send first chunk for testing
-                        let _ = jito
-                            .submit_bundle(chunk, mint_pubkey, Some(&pumpfun_client))
-                            .await
-                            .unwrap();
+                for chunk in late_txs_chunks {
+                    let mut retries = 0;
+                    let max_retries = 3;
+                    loop {
+                        match jito.submit_bundle(chunk.clone(), mint_pubkey, Some(&pumpfun_client)).await {
+                            Ok(result) => {
+                                let _ = result;
+                                break;
+                            }
+                            Err(e) => {
+                                if retries >= max_retries {
+                                    eprintln!("Failed to submit bundle after {} retries: {}", max_retries, e);
+                                    break;
+                                }
+                                retries += 1;
+                                eprintln!("Bundle submission failed, retrying ({}/{}): {}", retries, max_retries, e);
+                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            }
+                        }
                     }
-                    break;
-                } else {
-                    sleep(Duration::from_millis(100));
                 }
             }
         });
