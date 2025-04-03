@@ -151,6 +151,12 @@ impl BundleTransactions {
             first_tx_ixs.extend(buy_ixs);
         }
 
+        //If we only have 3 buyers, add jito tip to first buy
+        if self.keypairs_to_treat.len() < 3 {
+            // last item or 23rd item of list
+            first_tx_ixs.push(jito_tip_ix.clone());
+        }
+
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs);
         transactions.push(first_tx);
 
@@ -181,6 +187,14 @@ impl BundleTransactions {
                 transactions.push(new_tx);
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
+        }
+
+        //If we only have 3 buyers, add jito tip to first buy
+        if self.keypairs_to_treat.len() == 3 {
+            // last item or 23rd item of list
+            tx_ixs.push(jito_tip_ix.clone());
+            let new_tx = self.get_tx(&tx_ixs);
+            transactions.push(new_tx);
         }
 
         test_transactions(&self.client, &transactions).await;
