@@ -139,7 +139,11 @@ impl BundleTransactions {
         let mut first_tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
         first_tx_ixs.extend(dev_ix);
 
-        let first_tx_chunk = self.keypairs_to_treat.get(..3).unwrap_or_default();
+        let first_tx_chunk = if self.keypairs_to_treat.len() < 3 {
+            &self.keypairs_to_treat[..]
+        } else {
+            &self.keypairs_to_treat[..3]
+        };
 
         for buyer in first_tx_chunk {
             let buy_ixs = self
