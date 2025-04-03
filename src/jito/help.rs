@@ -6,6 +6,8 @@ use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::account::Account;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
@@ -17,15 +19,23 @@ use solana_sdk::{
 };
 use std::collections::HashSet;
 use std::sync::Arc;
-
 //Sum up for FIRST BUNDLE : - can add tip ix for all transactions
-//TX 1 : 675 as base (create tx + dev buy ixs) followed by 146 bytes per buy ixs -> create + dev buy + 3 more buys
-//TX 2:  389 as base (buy ixs) followed by 146 bytes per buy ixs -> 5 more ixs (total, 6 buys)
-//Tx 3: Same as tx2 -> 6 buys
-//Tx 4: Same as tx3 -> 6 buys
-//Tx 5: Same as tx4 + tip-ix (49 bytes) -> 6 buys + tip ix
+//44 bytes for fees
 
-//TOTAL: 28 buys + create + tip ix
+//base with create -> 703 bytes
+
+//Base without create -> 482 bytes
+
+//One full buy ixs -> 146 bytes
+
+//49 bytes for tip to jito ix
+
+//703 + 3 * 146 + 44 = 1185 bytes -> first tx remains unchanged
+
+//second tx: 44 + first buy (482 bytes) + 4 buy ixs (582 bytes) = 1110 bytes (has space for jito tip) -> 5 buy ixs per tx
+
+//TOTAL: create + dev buy + 3 buys + 4 * 5 buys + tip = create + 24 buys + tip ix
+//TOTAL: 24 buys + create + tip ix
 
 pub struct BundleTransactions {
     admin_keypair: Keypair,
@@ -48,19 +58,19 @@ impl BundleTransactions {
         others_with_amount: Vec<KeypairWithAmount>,
         jito_tip_account: Pubkey,
     ) -> Self {
-        let client = RpcClient::new(RPC_URL);
+        let client: RpcClient = RpcClient::new(RPC_URL);
 
-        let jito_rpc = RpcClient::new_with_commitment(
+        let jito_rpc: RpcClient = RpcClient::new_with_commitment(
             RPC_URL.to_string(),
             solana_sdk::commitment_config::CommitmentConfig::confirmed(),
         );
 
-        let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
+        let jito: JitoBundle = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
 
         let dev: Keypair = admin_keypair.insecure_clone();
         let payer: Arc<Keypair> = Arc::new(dev);
 
-        let pumpfun_client = PumpFun::new(payer);
+        let pumpfun_client: PumpFun = PumpFun::new(payer);
 
         let keypairs_to_treat: Vec<KeypairWithAmount> = others_with_amount;
         let mint_keypair: Keypair = mint_keypair.insecure_clone();
@@ -109,6 +119,7 @@ impl BundleTransactions {
 
         let jito_tip_ix = self.get_tip_ix().await;
         let priority_fee_ix = self.get_priority_fee_ix(2_000_000);
+
         let mint_ix = self
             .pumpfun_client
             .create_instruction(&self.mint_keypair, token_metadata);
@@ -125,56 +136,51 @@ impl BundleTransactions {
             .await
             .unwrap();
 
-        let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
+        let mut first_tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
+        first_tx_ixs.extend(dev_ix);
 
-        tx_ixs.extend(dev_ix);
-        let mut last_index = 2;
-        for (index, keypair) in self.keypairs_to_treat.iter().enumerate() {
-            let buy_ixs: Vec<Instruction> = self
+        let first_tx_chunk = self.keypairs_to_treat.get(..3).unwrap_or_default();
+
+        for buyer in first_tx_chunk {
+            let buy_ixs = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, true)
+                .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
                 .await
                 .unwrap();
 
-            //Treating first tx with mint instruction
-            if index < 3 && transactions.len() == 0 {
-                tx_ixs.extend(buy_ixs);
-            } else {
-                //Push first transaction
-                if transactions.len() == 0 {
-                    let first_tx: VersionedTransaction = self.get_tx(&tx_ixs);
-                    transactions.push(first_tx);
-                    tx_ixs = vec![priority_fee_ix.clone()];
-                }
-                //Treating other txs
-                if (index - last_index) <= 6 {
-                    //If we are still within 6 buy instructions for the given tx
-                    tx_ixs.extend(buy_ixs);
-                    break; //Added just for testing to see second bundle where in block difference
-                } else {
-                    //Treating last transaction
-                    if transactions.len() == 4 {
-                        tx_ixs.push(jito_tip_ix.clone());
-                    }
-                    let tx = self.get_tx(&tx_ixs);
-                    transactions.push(tx);
-
-                    //Breaking up early, there are still some keypairs untreated
-                    if transactions.len() == 5 {
-                        return transactions;
-                    }
-                    tx_ixs = vec![priority_fee_ix.clone()];
-                    tx_ixs.extend(buy_ixs);
-                    last_index = index - 1;
-                }
-            }
+            first_tx_ixs.extend(buy_ixs);
         }
 
-        if tx_ixs.len() > 1 {
-            tx_ixs.push(jito_tip_ix.clone());
-            // has more than just the priority fee instruction
-            let final_tx = self.get_tx(&tx_ixs);
-            transactions.push(final_tx);
+        let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs);
+        transactions.push(first_tx);
+
+        let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
+
+        for (index, buyer) in self.keypairs_to_treat.iter().skip(3).enumerate() {
+            if index > 19 {
+                // break at 23rd keypair. can treat total of 24 buyers 19 + 3 = 22, starting at 0 gives 23 keypairs.
+                break;
+            }
+
+            let buy_ixs = self
+                .pumpfun_client
+                .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
+                .await
+                .unwrap();
+
+            tx_ixs.extend(buy_ixs);
+
+            if index == 19 || index == self.keypairs_to_treat.len() - 1 {
+                // last item or 23rd item of list
+                tx_ixs.push(jito_tip_ix.clone());
+            }
+
+            // Every 5 buyers, create new transaction
+            if (index + 1) % 5 == 0 {
+                let new_tx = self.get_tx(&tx_ixs);
+                transactions.push(new_tx);
+                tx_ixs = vec![priority_fee_ix.clone()];
+            }
         }
 
         test_transactions(&self.client, &transactions).await;
@@ -182,59 +188,50 @@ impl BundleTransactions {
     }
 
     pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
-        let mut txs: Vec<VersionedTransaction> = Vec::new();
+        let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-        let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
+        let mint_pubkey: Pubkey = self.mint_keypair.pubkey(); // Split off the first 27 buyers since they have been treated
 
-        let rest_keypairs: Vec<KeypairWithAmount> = self.keypairs_to_treat.split_off(27); // Split off the first 27 buyers since they have been treated
+        let priority_fee_ix = self.get_priority_fee_ix(300_000);
+        let jito_tip_ix = self.get_tip_ix().await;
 
         //Adding all instructions into array to treat
-        let mut all_ixs: Vec<Instruction> = Vec::new();
+        let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
 
-        for keypair in rest_keypairs {
+        for (index, keypair) in self.keypairs_to_treat.iter().skip(22).enumerate() {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
                 .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
                 .await
                 .unwrap();
 
-            all_ixs.extend(buy_ixs);
-        }
+            tx_ixs.extend(buy_ixs);
 
-        let priority_fee_ix = self.get_priority_fee_ix(300_000);
-        let jito_tip_ix = self.get_tip_ix().await;
-
-        let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
-
-        //Each tx instructions should have 6 buys (2 per buy) + 1 priority fee ix = 13 instructions. if last tx, has 14
-        let limit = 13;
-
-        for ix in all_ixs {
-            if tx_ixs.len() < limit {
-                tx_ixs.push(ix);
-            } else {
-                if txs.len() % 5 == 4 {
-                    tx_ixs.push(jito_tip_ix.clone());
-                }
-                // has more than just the priority fee instruction
+            // Check if we're on the 5th transaction (index 4) and have 4 buyers
+            if transactions.len() == 4 && (index + 1) % 4 == 0 {
+                tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs);
-                txs.push(new_tx);
+                transactions.push(new_tx);
+                tx_ixs = vec![priority_fee_ix.clone()];
+            }
+            // Check if we're on the last buyer
+            else if index == self.keypairs_to_treat.len() - 23 {
+                tx_ixs.push(jito_tip_ix.clone());
+                let new_tx = self.get_tx(&tx_ixs);
+                transactions.push(new_tx);
+            }
+            // Normal case: every 5 buyers
+            else if (index + 1) % 5 == 0 {
+                let new_tx = self.get_tx(&tx_ixs);
+                transactions.push(new_tx);
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
         }
-
-        if tx_ixs.len() > 1 {
-            //higher than just the priority fee ix
-            tx_ixs.push(jito_tip_ix);
-            let final_tx = self.get_tx(&tx_ixs);
-            txs.push(final_tx);
-        }
-
-        txs
+        transactions
     }
 
-    pub fn has_delayed_bundle(&self) -> bool {
-        self.keypairs_to_treat.len() > 26
+    pub fn has_delayed_bundle(&mut self) -> bool {
+        self.keypairs_to_treat.len() > 23 // In total we can get 23 buys + dev buy for first bundle
     }
 
     fn get_tx(&self, ixs: &Vec<Instruction>) -> VersionedTransaction {
