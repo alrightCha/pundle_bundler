@@ -7,6 +7,7 @@ use solana_client::rpc_client::RpcClient;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::keypair::Keypair;
+use solana_sdk::sysvar::rent::Rent;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{signer::Signer, system_instruction};
 use std::collections::HashSet;
@@ -102,13 +103,16 @@ pub async fn recursive_pay(
             wallet_count += 1;
             println!("Balance: {}", balance);
 
-            if balance < 2000000 {
+            let rent = Rent::default();
+            let rent_exempt_min = rent.minimum_balance(0);
+
+            if balance < rent_exempt_min {
                 println!("Skipping refund for {}", keypair.pubkey());
                 continue;
             }
 
             // Calculate transfer amount based on remaining lamports needed or maximum available
-            let available_transfer = balance - 2_000_000;
+            let available_transfer = balance - rent_exempt_min;
 
             let transfer_amount = match remaining_lamports {
                 Some(remaining) => remaining.min(available_transfer),
@@ -236,7 +240,11 @@ pub async fn recursive_pay(
     }
 }
 
-fn get_signers(ixs: &Vec<Instruction>, signers: &Vec<Keypair>, admin_keypair: &Keypair) -> Vec<Keypair> {
+fn get_signers(
+    ixs: &Vec<Instruction>,
+    signers: &Vec<Keypair>,
+    admin_keypair: &Keypair,
+) -> Vec<Keypair> {
     let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
 
     for ix in ixs {

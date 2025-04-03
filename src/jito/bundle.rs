@@ -142,8 +142,9 @@ pub async fn process_bundle(
         jito.one_tx_bundle(fund_tx).await.unwrap();
     } else {
         // Calculate number of transactions needed based on size
-        let num_transactions = (1232 as f64 / 1232.0).ceil() as usize;
-        let instructions_per_tx = instructions.len() / num_transactions;
+        let instructions_per_tx = 8;
+        let num_transactions = (instructions.len() / instructions_per_tx) as usize;
+
 
         // Split instructions into chunks
         let mut chunks: Vec<Vec<Instruction>> = Vec::new();

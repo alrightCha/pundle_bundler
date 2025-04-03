@@ -163,16 +163,13 @@ impl PumpFun {
             }
         };
 
-        println!("Amount sol: {:?}", amount_sol);
-        println!("Buy amount: {:?}", buy_amount);
         let mut instructions: Vec<Instruction> = Vec::new();
 
         // Add ata instruction or get acc if available
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
-        println!("ATA: {:?}", ata);
+        println!("PUBKEY: {:?} ATA: {:?}", keypair.pubkey().to_string(),  ata);
 
         if self.rpc.get_account(&ata).await.is_err() {
-            println!("Passing create ATA instruction");
             let create_ata_ix = create_associated_token_account(
                 &keypair.pubkey(),
                 &keypair.pubkey(),
@@ -545,7 +542,6 @@ impl PumpFun {
 
     fn calculate_with_slippage(amount: u64, basis_points: u64) -> u64 {
         let res = amount - (amount * basis_points) / 10000;
-        print!("Result with slippage: {:?}", res);
         res
     }
 }

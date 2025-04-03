@@ -9,20 +9,11 @@ pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 pub const JITO_TIP_AMOUNT: u64 = 300_000;
 pub const SOLANA_TIP: u64 = 5_000_000;
 pub const MAX_RETRIES: u32 = 15;
-pub const FEE_AMOUNT: u64 = 10_000;
+pub const FEE_AMOUNT: u64 = 20_000_000;
 pub const BUFFER_AMOUNT: u64 = 2_000_000;
 pub const TOKEN_AMOUNT_MULTIPLIER: u64 = 1_000_000;
 pub const PORT: u16 = 3000;
 pub const JITO_TIP_SIZE: usize = 80;
 pub const MAX_TX_PER_BUNDLE: usize = 5;
-
-pub async fn setup_https_config() -> RustlsConfig {
-    let cert_dir = env::var("CERTIFICATE_DIR")
-        .expect("Certificate directory not defined");
-    let cert_path = PathBuf::from(&cert_dir).join("fullchain.pem");
-    let key_path = PathBuf::from(&cert_dir).join("privkey.pem");
-
-    RustlsConfig::from_pem_file(cert_path, key_path)
-        .await
-        .expect("Failed to configure HTTPS")
-}
+pub const MAX_BUYERS_FIRST_BUNDLE: usize = 19; 
+pub const MAX_BUYERS_FIRST_TX: usize = 3; 
