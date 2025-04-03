@@ -141,8 +141,6 @@ impl BundleTransactions {
         let mut first_tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
         first_tx_ixs.extend(dev_ix);
 
-        self.get_tx(&first_tx_ixs, true);
-
         let first_tx_chunk = if self.keypairs_to_treat.len() < MAX_BUYERS_FIRST_TX {
             &self.keypairs_to_treat[..]
         } else {
@@ -202,7 +200,7 @@ impl BundleTransactions {
 
             tx_ixs.extend(buy_ixs);
 
-            if index == MAX_BUYERS_FIRST_BUNDLE || index == self.keypairs_to_treat.len() - 1 {
+            if index == MAX_BUYERS_FIRST_BUNDLE || index == self.keypairs_to_treat.len() - 1 - MAX_BUYERS_FIRST_TX {
                 // last item or 23rd item of list
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
