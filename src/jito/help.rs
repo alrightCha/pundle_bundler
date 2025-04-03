@@ -118,7 +118,7 @@ impl BundleTransactions {
         let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
         let jito_tip_ix = self.get_tip_ix().await;
-        let priority_fee_ix = self.get_priority_fee_ix(2_000_000);
+        let priority_fee_ix = self.get_priority_fee_ix(20_000_000);
 
         let mint_ix = self
             .pumpfun_client
