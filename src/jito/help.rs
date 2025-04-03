@@ -5,8 +5,6 @@ use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::account::Account;
-use solana_sdk::address_lookup_table::state::AddressLookupTable;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
@@ -265,7 +263,7 @@ impl BundleTransactions {
     }
 
     pub fn has_delayed_bundle(&mut self) -> bool {
-        self.keypairs_to_treat.len() > 23 // In total we can get 23 buys + dev buy for first bundle
+        self.keypairs_to_treat.len() > MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 // In total we can get 23 buys + dev buy for first bundle
     }
 
     fn get_tx(&self, ixs: &Vec<Instruction>, with_dev: bool) -> VersionedTransaction {

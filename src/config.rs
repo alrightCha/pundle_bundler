@@ -1,19 +1,11 @@
-use std::path::PathBuf;
-use axum_server::tls_rustls::RustlsConfig;
-use std::env;
-
 pub const RPC_URL: &str = "https://mainnet.helius-rpc.com/?api-key=16c20cdf-1c1b-44b2-8caa-7597b70d916a";
 pub const ORCHESTRATOR_URL: &str = "http://localhost:3001/bundled";
 pub const ADMIN_PUBKEY: &str = "FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH";
-pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 pub const JITO_TIP_AMOUNT: u64 = 300_000;
-pub const SOLANA_TIP: u64 = 5_000_000;
 pub const MAX_RETRIES: u32 = 15;
 pub const FEE_AMOUNT: u64 = 20_000_000;
 pub const BUFFER_AMOUNT: u64 = 2_000_000;
 pub const TOKEN_AMOUNT_MULTIPLIER: u64 = 1_000_000;
 pub const PORT: u16 = 3000;
-pub const JITO_TIP_SIZE: usize = 80;
-pub const MAX_TX_PER_BUNDLE: usize = 5;
 pub const MAX_BUYERS_FIRST_BUNDLE: usize = 19; 
 pub const MAX_BUYERS_FIRST_TX: usize = 3; 
