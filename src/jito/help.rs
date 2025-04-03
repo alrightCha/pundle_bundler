@@ -178,7 +178,7 @@ impl BundleTransactions {
                 buyer.keypair.pubkey().to_string()
             );
 
-            if index > MAX_BUYERS_FIRST_BUNDLE {
+            if index == MAX_BUYERS_FIRST_BUNDLE {
                 // break at 23rd keypair. can treat total of 24 buyers 19 + 3 = 22, starting at 0 gives 23 keypairs.
                 break;
             }
@@ -231,7 +231,7 @@ impl BundleTransactions {
         for (index, keypair) in self.keypairs_to_treat.iter().skip(MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX).enumerate() {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, true)
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
                 .await
                 .unwrap();
 
