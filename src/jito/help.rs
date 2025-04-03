@@ -263,7 +263,7 @@ impl BundleTransactions {
     }
 
     pub fn has_delayed_bundle(&mut self) -> bool {
-        self.keypairs_to_treat.len() > MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 // In total we can get 23 buys + dev buy for first bundle
+        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 // In total we can get 23 buys + dev buy for first bundle
     }
 
     fn get_tx(&self, ixs: &Vec<Instruction>, with_dev: bool) -> VersionedTransaction {
