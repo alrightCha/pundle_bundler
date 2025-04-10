@@ -7,10 +7,8 @@ use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::{build_transaction, test_transactions};
 use pumpfun_cpi::instruction::Create;
-use solana_client::rpc_client::{RpcClient, SerializableTransaction};
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use solana_sdk::signature::Signature;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
     instruction::Instruction,
@@ -49,6 +47,9 @@ pub struct BundleTransactions {
     address_lookup_table_account: AddressLookupTableAccount,
     keypairs_to_treat: Vec<KeypairWithAmount>,
     jito_tip_account: Pubkey,
+    with_delay: bool,
+    priority_fee: u64,
+    jito_fee: u64,
 }
 
 impl BundleTransactions {
@@ -59,6 +60,9 @@ impl BundleTransactions {
         address_lookup_table_account: AddressLookupTableAccount,
         others_with_amount: Vec<KeypairWithAmount>,
         jito_tip_account: Pubkey,
+        with_delay: bool,
+        priority_fee: u64,
+        jito_fee: u64,
     ) -> Self {
         let client: RpcClient = RpcClient::new(RPC_URL);
 
@@ -97,7 +101,10 @@ impl BundleTransactions {
             jito,
             address_lookup_table_account,
             keypairs_to_treat,
-            jito_tip_account
+            jito_tip_account,
+            with_delay,
+            jito_fee,
+            priority_fee,
         }
     }
     //Separate logic of checking txs size into separate function
@@ -119,7 +126,7 @@ impl BundleTransactions {
 
         let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-        let jito_tip_ix = self.get_tip_ix().await;
+        let jito_tip_ix = self.get_tip_ix(None).await;
         let priority_fee_ix = self.get_priority_fee_ix(2_000_000);
 
         let mint_ix = self
@@ -147,18 +154,20 @@ impl BundleTransactions {
             &self.keypairs_to_treat[..3]
         };
 
-        for buyer in first_tx_chunk {
-            let buy_ixs = self
-                .pumpfun_client
-                .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
-                .await
-                .unwrap();
+        if !self.with_delay {
+            for buyer in first_tx_chunk {
+                let buy_ixs = self
+                    .pumpfun_client
+                    .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
+                    .await
+                    .unwrap();
 
-            first_tx_ixs.extend(buy_ixs);
+                first_tx_ixs.extend(buy_ixs);
+            }
         }
 
-        //If we only have 3 buyers, add jito tip to first buy
-        if self.keypairs_to_treat.len() <= MAX_BUYERS_FIRST_TX {
+        //If we only have 3 buyers or if the mode is with delay, add jito tip to first buy
+        if self.keypairs_to_treat.len() <= MAX_BUYERS_FIRST_TX || self.with_delay {
             println!("Adding tip here");
             // last item or 23rd item of list
             let dev_jito_tip = self
@@ -172,6 +181,11 @@ impl BundleTransactions {
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
 
         transactions.push(first_tx);
+
+        //Break early and return first tx if with delay 
+        if self.with_delay {
+            return transactions
+        }
 
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
 
@@ -200,7 +214,9 @@ impl BundleTransactions {
 
             tx_ixs.extend(buy_ixs);
 
-            if index == MAX_BUYERS_FIRST_BUNDLE || index == self.keypairs_to_treat.len() - 1 - MAX_BUYERS_FIRST_TX {
+            if index == MAX_BUYERS_FIRST_BUNDLE
+                || index == self.keypairs_to_treat.len() - 1 - MAX_BUYERS_FIRST_TX
+            {
                 // last item or 23rd item of list
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
@@ -231,8 +247,8 @@ impl BundleTransactions {
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey(); // Split off the first 27 buyers since they have been treated
 
-        let priority_fee_ix = self.get_priority_fee_ix(300_000);
-        let jito_tip_ix = self.get_tip_ix().await;
+        let priority_fee_ix = self.get_priority_fee_ix(self.priority_fee);
+        let jito_tip_ix = self.get_tip_ix(Some(self.jito_fee)).await;
 
         //Adding all instructions into array to treat
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
@@ -240,7 +256,7 @@ impl BundleTransactions {
         for (index, keypair) in self
             .keypairs_to_treat
             .iter()
-            .skip(MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX)
+            .skip(if self.with_delay { 0 } else { MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX })
             .enumerate()
         {
             let buy_ixs: Vec<Instruction> = self
@@ -260,9 +276,7 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
-            else if index
-                == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1
-            {
+            else if (index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
@@ -279,7 +293,7 @@ impl BundleTransactions {
     }
 
     pub fn has_delayed_bundle(&mut self) -> bool {
-        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1
+        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 || self.with_delay
         // In total we can get 23 buys + dev buy for first bundle
     }
 
@@ -331,13 +345,22 @@ impl BundleTransactions {
         all_ixs_signers
     }
 
-    async fn get_tip_ix(&self) -> Instruction {
-        let tip_ix = self
-            .jito
-            .get_tip_ix(self.admin_keypair.pubkey(), Some(self.jito_tip_account))
-            .await
-            .unwrap();
-        tip_ix
+    async fn get_tip_ix(&self, fee: Option<u64>) -> Instruction {
+        if let Some(fee) = fee {
+            let tip_ix = self
+                .jito
+                .get_custom_tip_ix(self.admin_keypair.pubkey(), self.jito_tip_account, fee)
+                .await
+                .unwrap();
+            tip_ix
+        } else {
+            let tip_ix = self
+                .jito
+                .get_tip_ix(self.admin_keypair.pubkey(), Some(self.jito_tip_account))
+                .await
+                .unwrap();
+            tip_ix
+        }
     }
 
     fn get_priority_fee_ix(&self, fee: u64) -> Instruction {

@@ -1,7 +1,6 @@
 use dotenv::dotenv;
 use reqwest::Client as HttpClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use solana_sdk::signature::Signature;
 use solana_sdk::{
     address_lookup_table::{state::LOOKUP_TABLE_META_SIZE, AddressLookupTableAccount},
     instruction::Instruction,
@@ -23,13 +22,16 @@ use crate::solana::{
 };
 use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
-use solana_client::rpc_client::{RpcClient, SerializableTransaction};
+use solana_client::rpc_client::RpcClient;
 
 pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
     dev_keypair_with_amount: KeypairWithAmount,
     mint: &Keypair,
     token_metadata: Create,
+    priority_fee: u64,
+    jito_fee: u64,
+    with_delay: bool,
 ) -> Result<Pubkey, Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
 
@@ -195,6 +197,9 @@ pub async fn process_bundle(
         address_lookup_table_account,
         keypairs_with_amount,
         tip_account,
+        with_delay, 
+        priority_fee,
+        jito_fee, 
     );
 
     //Submitting first bundle

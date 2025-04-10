@@ -1,6 +1,6 @@
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
 
-pub fn get_splits(dev_buy: u64, amount: u64) -> Vec<u64> {
+pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     println!("Dev buy SOL: {:?}", dev_buy);
     println!("Amount SOL: {:?}", amount);
     let mut bonding_curve = BondingCurveAccount::default();
@@ -13,11 +13,10 @@ pub fn get_splits(dev_buy: u64, amount: u64) -> Vec<u64> {
     println!("Tokens to receive: {:?}", tokens_for_amount);
 
     const TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000;
-    const MAX_WALLET_PERCENTAGE: f64 = 0.03; // 3%
-    const MAX_TOKENS_PER_WALLET: u64 = (TOTAL_SUPPLY as f64 * MAX_WALLET_PERCENTAGE) as u64;
+    let max_tokens_per_wallet: u64 = (TOTAL_SUPPLY as f64 * percent) as u64;
 
     // Calculate how many wallets needed based on token amount
-    let number_of_wallets = (tokens_for_amount as f64 / MAX_TOKENS_PER_WALLET as f64).ceil() as u64;
+    let number_of_wallets = (tokens_for_amount as f64 / max_tokens_per_wallet as f64).ceil() as u64;
     println!("Number of wallets needed: {:?}", number_of_wallets);
     
     let mut remaining_sol = amount;
@@ -55,7 +54,7 @@ pub fn get_splits(dev_buy: u64, amount: u64) -> Vec<u64> {
             
             // Verify the tokens this split would receive doesn't exceed max per wallet
             let tokens_for_split = bonding_curve.get_buy_price(split_amount).unwrap();
-            if tokens_for_split > MAX_TOKENS_PER_WALLET {
+            if tokens_for_split > max_tokens_per_wallet {
                 // If it would exceed, reduce the split amount
                 let reduced_split = split_amount / 2; // Simple reduction, could be more sophisticated
                 splits.push(reduced_split);
@@ -83,7 +82,7 @@ mod tests {
     fn test_large_amount_multiple_splits() {
         let dev_buy = 500_000_000;
         let amount = 14_000_000_000; // Large amount that should result in multiple wallets
-        let splits = get_splits(dev_buy, amount);
+        let splits = get_splits(dev_buy, amount, 0.02);
         
         let total = splits.iter().sum::<u64>();
         println!("Splits: {:?}", splits);
@@ -95,7 +94,7 @@ mod tests {
     fn test_token_limits_respected() {
         let dev_buy = 1_000_000_000;
         let amount = 26_000_000_000; // Large amount that should result in multiple wallets
-        let splits = get_splits(dev_buy, amount);
+        let splits = get_splits(dev_buy, amount, 0.03);
         println!("Splits: {:?}", splits);
         let mut bonding_curve = BondingCurveAccount::default();
         let _ = bonding_curve.get_buy_price(dev_buy).unwrap(); // Register dev buy

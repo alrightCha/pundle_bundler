@@ -41,14 +41,28 @@ impl JitoBundle {
         }
     }
 
-    pub async fn get_tip_ix(&self, deployer_pubkey: Pubkey, tip_account: Option<Pubkey>) -> Result<Instruction> {
+    pub async fn get_tip_ix(
+        &self,
+        deployer_pubkey: Pubkey,
+        tip_account: Option<Pubkey>,
+    ) -> Result<Instruction> {
         let jito_tip_account: Pubkey = match tip_account {
             Some(tip_account) => tip_account,
-            None => self.get_tip_account().await
+            None => self.get_tip_account().await,
         };
 
         let jito_tip_ix =
             system_instruction::transfer(&deployer_pubkey, &jito_tip_account, self.jito_tip_amount);
+        Ok(jito_tip_ix)
+    }
+
+    pub async fn get_custom_tip_ix(
+        &self,
+        deployer_pubkey: Pubkey,
+        tip_account: Pubkey,
+        amount: u64,
+    ) -> Result<Instruction> {
+        let jito_tip_ix = system_instruction::transfer(&deployer_pubkey, &tip_account, amount);
         Ok(jito_tip_ix)
     }
 

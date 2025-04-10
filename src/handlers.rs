@@ -108,7 +108,7 @@ impl HandlerManager {
         };
 
         println!("Wallet buy amount: {:?}", payload.wallets_buy_amount);
-        let wallets_buy_amount = get_splits(payload.dev_buy_amount, payload.wallets_buy_amount);
+        let wallets_buy_amount = get_splits(payload.dev_buy_amount, payload.wallets_buy_amount, payload.split_percent);
 
         //Get split length and break if more than 12
         println!("Wallets buy amount length: {:?}", wallets_buy_amount.len());
@@ -148,6 +148,10 @@ impl HandlerManager {
             wallets,
         };
 
+        let priority_fee = payload.units; 
+        let jito_fee = payload.jito_tip; 
+        let with_delay = payload.with_delay; 
+
         // Spawn background processing of bundle in a separate task
         spawn(async move {
             match process_bundle(
@@ -155,6 +159,9 @@ impl HandlerManager {
                 dev_keypair_with_amount,
                 &mint,
                 token_metadata,
+                priority_fee, 
+                jito_fee, 
+                with_delay
             )
             .await
             {

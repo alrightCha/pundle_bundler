@@ -13,6 +13,10 @@ pub struct PostBundleRequest {
     pub uri: String,
     pub dev_buy_amount: u64,
     pub wallets_buy_amount: u64,
+    pub with_delay: bool, 
+    pub split_percent: f64, 
+    pub units: u64, 
+    pub jito_tip: u64
 }
 
 #[derive(Serialize)]
