@@ -148,7 +148,7 @@ impl HandlerManager {
             wallets,
         };
 
-        let priority_fee = payload.units; 
+        let priority_fee = payload.fee; 
         let jito_fee = payload.jito_tip; 
         let with_delay = payload.with_delay; 
 
