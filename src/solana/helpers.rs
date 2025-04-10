@@ -264,9 +264,6 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
 
     let mut amount_sol: u64 = 0;
 
-    let sol_jup_amount = sol_for_tokens(mint_pubkey, amount).await.unwrap();
-    println!("SOL AMOUNT FROM JUP: {:?}", sol_jup_amount); 
-
     if pool_info.is_bonding_curve_complete {
         let amount = sol_for_tokens(mint_pubkey, amount).await;
         match amount {
