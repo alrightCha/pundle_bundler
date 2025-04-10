@@ -261,7 +261,7 @@ impl BundleTransactions {
         {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, true)
                 .await
                 .unwrap();
 
@@ -289,6 +289,15 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
         }
+
+        if tx_ixs.len() > 1 {
+            println!("Added tip ix");
+            tx_ixs.push(jito_tip_ix);
+            let last_tx = self.get_tx(&tx_ixs, false);
+            transactions.push(last_tx);
+        }
+
+        test_transactions(&self.client, &transactions).await; 
         transactions
     }
 
