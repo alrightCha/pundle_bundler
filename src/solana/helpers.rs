@@ -266,7 +266,7 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
 
     if pool_info.is_bonding_curve_complete {
         let price = pool_info.sell_price; 
-        let sol_amount = (price * amount) / LAMPORTS_PER_SOL; 
+        let sol_amount = (price * amount) / 100; 
         amount_sol = sol_amount; 
     } else {
         let amount = sol_for_tokens(mint_pubkey, amount).await;
