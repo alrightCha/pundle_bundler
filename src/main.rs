@@ -11,6 +11,8 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
+use params::Price;
+use solana::helpers::get_sol_amount;
 use solana::lut;
 use solana::refund::refund_keypairs;
 use solana::utils::load_keypair;
@@ -56,6 +58,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "PcNYpD72ef3jx2xgnVpm36tjSgzaYzMafnNZSKxMLPp".to_string(),
         lut_pubkey,
     );
+
+    let payload: Price = Price {
+        token_amount: 10000,
+        mint: "4xL3YVDL2VVpfrNhym3bCpA3kYncWcabbDqNkdVX5dp".to_string(),
+    };
+
+    let amount = get_sol_amount(payload.token_amount, payload.mint).await;
+
+    println!("SELL AMOUNT : {:?}", amount); 
+    
+
     //setup app
     let app = Router::new()
         .route("/", get(health_check))
@@ -166,6 +179,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 move |payload| {
                     let handler_manager = Arc::clone(&handler_manager);
                     async move { handler_manager.lock().await.pay_recursive(payload).await }
+                }
+            }),
+        )
+        .route(
+            "/price",
+            post({
+                let handler_manager = Arc::clone(&handler_manager);
+                move |payload| {
+                    let handler_manager = Arc::clone(&handler_manager);
+                    async move { handler_manager.lock().await.get_price(payload).await }
                 }
             }),
         )

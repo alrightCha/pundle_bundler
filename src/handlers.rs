@@ -1,8 +1,8 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
     BumpRequest, BumpResponse, GetPoolInformationRequest, LutInit, LutRecord, LutResponse,
-    PoolInformation, RecursivePayRequest, SellAllRequest, SellResponse, UniqueSellRequest,
-    WithdrawAllSolRequest,
+    PoolInformation, Price, PriceResponse, RecursivePayRequest, SellAllRequest, SellResponse,
+    UniqueSellRequest, WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::utils::get_splits;
@@ -36,7 +36,7 @@ use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, TOKEN_AMOUNT_MULTIPLI
 use crate::jito::bundle::process_bundle;
 use crate::jito::jito::JitoBundle;
 use crate::solana::grind::grind;
-use crate::solana::helpers::sell_all_txs;
+use crate::solana::helpers::{get_sol_amount, sell_all_txs};
 use crate::solana::utils::{create_keypair, get_keypairs_for_pubkey, load_keypair};
 use std::collections::HashMap;
 
@@ -234,7 +234,6 @@ impl HandlerManager {
             };
 
             let blockhash = client.get_latest_blockhash().unwrap();
-
             let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
             let tip_ix = jito.get_tip_ix(keypair.pubkey(), None).await.unwrap();
 
@@ -401,6 +400,11 @@ impl HandlerManager {
         });
 
         Json(BumpResponse { success: true })
+    }
+
+    pub async fn get_price(&self, Json(payload): Json<Price>) -> Json<PriceResponse> {
+        let amount_sell = get_sol_amount(payload.token_amount, payload.mint).await;
+        Json(PriceResponse { price: amount_sell })
     }
 
     pub async fn setup_lut_record(

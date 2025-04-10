@@ -129,15 +129,13 @@ pub struct RecursivePayResponse {
     pub signatures: Vec<String>,
 }
 
-#[derive(Deserialize)]
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct LutRecord {
     pub mint: String,
     pub lut: String,
 }
 
-#[derive(Deserialize)]
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct LutInit {
     pub luts: Vec<LutRecord>,
 }
@@ -145,4 +143,15 @@ pub struct LutInit {
 #[derive(Serialize)]
 pub struct LutResponse {
     pub confirmed: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Price {
+    pub token_amount: u64,
+    pub mint: String,
+}
+
+#[derive(Serialize)]
+pub struct PriceResponse {
+    pub price: u64,
 }

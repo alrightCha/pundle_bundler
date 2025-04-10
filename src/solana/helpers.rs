@@ -1,10 +1,12 @@
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::jito::jito::JitoBundle;
-use crate::jupiter::swap::swap_ixs;
+use crate::jupiter::swap::{sol_for_tokens, swap_ixs};
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::{build_transaction, get_ata_balance, test_transactions};
+use crate::solana::utils::{build_transaction, get_ata_balance, load_keypair, test_transactions};
+use dotenv::dotenv;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
     address_lookup_table::AddressLookupTableAccount,
@@ -14,6 +16,9 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use std::collections::{HashMap, HashSet};
+use std::env;
+use std::str::FromStr;
+use std::sync::Arc;
 
 pub async fn sell_all_txs(
     admin_keypair: Keypair,
@@ -31,7 +36,7 @@ pub async fn sell_all_txs(
             .map(|kp| kp.pubkey())
             .collect::<Vec<Pubkey>>()
     );
-    
+
     let mut tips_count = 0;
     let jito_client = RpcClient::new(RPC_URL);
     let jito = JitoBundle::new(jito_client, MAX_RETRIES, JITO_TIP_AMOUNT);
@@ -86,13 +91,17 @@ pub async fn sell_all_txs(
                 let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;
                 match pump_ixs {
                     Ok(ixs) => Some(ixs),
-                    Err(_) => None
+                    Err(_) => None,
                 }
             }
         };
 
         if let Some(new_ixs) = new_ixs {
-            println!("Passing sell ixs {:?} for {:?}", new_ixs.len(), keypair.pubkey().to_string());
+            println!(
+                "Passing sell ixs {:?} for {:?}",
+                new_ixs.len(),
+                keypair.pubkey().to_string()
+            );
             ixs.extend(new_ixs);
         }
     }
@@ -236,4 +245,35 @@ pub fn get_tx_signers(ixs: &Vec<Instruction>, all_keypairs: &Vec<Keypair>) -> Ve
         }
     }
     all_ixs_signers
+}
+
+pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
+    dotenv().ok();
+    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
+    let admin_kp = load_keypair(&admin_keypair_path).unwrap();
+    let payer: Arc<Keypair> = Arc::new(admin_kp);
+
+    let pumpfun_client = PumpFun::new(payer);
+
+    let mint_pubkey = Pubkey::from_str(&mint).unwrap();
+
+    let pool_info = pumpfun_client
+        .get_pool_information(&mint_pubkey)
+        .await
+        .unwrap();
+
+    let mut amount_sol: u64 = 0;
+
+    if pool_info.is_bonding_curve_complete {
+        let price = pool_info.sell_price; 
+        let sol_amount = (price * amount) / LAMPORTS_PER_SOL; 
+        amount_sol = sol_amount; 
+    } else {
+        let amount = sol_for_tokens(mint_pubkey, amount).await;
+        match amount {
+            Ok(amount_recv) => amount_sol = amount_recv,
+            Err(_) => println!("Token account balance not found"),
+        }
+    }
+    amount_sol
 }
