@@ -268,7 +268,7 @@ impl BundleTransactions {
             tx_ixs.extend(buy_ixs);
 
             // Check if we're on the 5th transaction (index 4) and have 4 buyers
-            if transactions.len() == 4 && (index + 1) % 4 == 0 {
+            if transactions.len() + 1 % 5 == 0 && (index + 1) % 4 == 0 {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
@@ -288,13 +288,6 @@ impl BundleTransactions {
                 transactions.push(new_tx);
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
-        }
-
-        if tx_ixs.len() > 1 {
-            println!("Added tip ix");
-            tx_ixs.push(jito_tip_ix);
-            let last_tx = self.get_tx(&tx_ixs, false);
-            transactions.push(last_tx);
         }
 
         test_transactions(&self.client, &transactions).await; 
