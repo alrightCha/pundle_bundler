@@ -65,13 +65,14 @@ pub async fn swap_ixs(keypair: &Keypair, base_mint: Pubkey, amount: u64, slippag
 }
 
 pub async fn sol_for_tokens(base_mint: Pubkey, amount: u64) -> Result<u64, Box<dyn std::error::Error>> {
+    let amount_decimals = amount * 1_000_000; // 6 decimals 
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let only_direct_routes = true; 
     let slippage_bps = 100;
     let quotes = jup_ag::quote(
         base_mint,
         sol,
-        amount,
+        amount_decimals,
         QuoteConfig {
             only_direct_routes,
             slippage_bps: Some(slippage_bps),

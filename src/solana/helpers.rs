@@ -275,7 +275,7 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
         }
     } else {
         let price = pool_info.sell_price;
-        let sol_amount = (price * amount) / LAMPORTS_PER_SOL;
+        let sol_amount = (price * amount) / 100; //Returns amount in lamports 
         amount_sol = sol_amount;
     }
     amount_sol
