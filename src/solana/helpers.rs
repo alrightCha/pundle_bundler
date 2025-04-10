@@ -264,16 +264,19 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
 
     let mut amount_sol: u64 = 0;
 
+    let sol_jup_amount = sol_for_tokens(mint_pubkey, amount).await.unwrap();
+    println!("SOL AMOUNT FROM JUP: {:?}", sol_jup_amount); 
+
     if pool_info.is_bonding_curve_complete {
-        let price = pool_info.sell_price; 
-        let sol_amount = (price * amount) / 100; 
-        amount_sol = sol_amount; 
-    } else {
         let amount = sol_for_tokens(mint_pubkey, amount).await;
         match amount {
             Ok(amount_recv) => amount_sol = amount_recv,
             Err(_) => println!("Token account balance not found"),
         }
+    } else {
+        let price = pool_info.sell_price;
+        let sol_amount = (price * amount) / LAMPORTS_PER_SOL;
+        amount_sol = sol_amount;
     }
     amount_sol
 }
