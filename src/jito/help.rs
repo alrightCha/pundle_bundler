@@ -276,7 +276,7 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
-            else if (index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
+            else if (!self.with_delay && index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
