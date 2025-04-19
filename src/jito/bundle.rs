@@ -16,6 +16,7 @@ use super::help::BundleTransactions;
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
+use crate::solana::utils::validate_delayed_txs;
 use crate::solana::{
     lut::create_lut,
     utils::{build_transaction, load_keypair, transfer_ix},
@@ -145,16 +146,13 @@ pub async fn process_bundle(
         for attempt in 1..=3 {
             match jito.one_tx_bundle(fund_tx.clone()).await {
                 Ok(_) => {
-                    println!("Fund transaction confirmed"); 
-                    break; 
-                },
+                    println!("Fund transaction confirmed");
+                    break;
+                }
                 Err(e) => {
                     let err_msg = format!("{:?}", e);
                     if err_msg.contains("unable to confirm transaction") {
-                        println!(
-                            "Attempt {}/{} failed: {}. Retrying in 2s...",
-                            attempt, 3, e
-                        );
+                        println!("Attempt {}/{} failed: {}. Retrying in 2s...", attempt, 3, e);
                         sleep(Duration::from_secs(2));
                     } else {
                         // Other types of errors: break early
@@ -246,7 +244,27 @@ pub async fn process_bundle(
 
                 let live = pumpfun_client.is_token_live(&mint_pubkey).await;
                 if live {
-                    let late_txs = txs_builder.collect_rest_txs().await;
+                    let mut late_txs = txs_builder.collect_rest_txs().await;
+                    let valid = validate_delayed_txs(&client, &late_txs).await;
+                    let retries = 3;
+                    if !valid {
+                        println!("Invalid delayed txs. Retrying...");
+                        for retry in 1..retries {
+                            println!("Retry {}", retry);
+                            late_txs = txs_builder.collect_rest_txs().await;
+                            let now_valid = validate_delayed_txs(&client, &late_txs).await;
+                            if now_valid {
+                                println!("Transactions are valid. Submitting...");
+                                break;
+                            } else {
+                                println!("Retry {} still invalid. Retrying again..", retry);
+                                sleep(Duration::from_millis(500));
+                            }
+                        }
+                    }else{
+                        println!("Valid delayed txs. Submitting bundle..."); 
+                    }
+
                     let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
                         late_txs.chunks(5).map(|c| c.to_vec()).collect();
 

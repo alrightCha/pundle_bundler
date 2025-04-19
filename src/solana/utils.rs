@@ -181,3 +181,31 @@ pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedT
         }
     }
 }
+
+pub async fn validate_delayed_txs(client: &RpcClient, transactions: &Vec<VersionedTransaction>) -> bool {
+    let config = RpcSimulateTransactionConfig {
+        sig_verify: true,
+        replace_recent_blockhash: false, // Disable blockhash replacement
+        commitment: Some(CommitmentConfig::finalized()),
+        ..Default::default()
+    };
+
+    let mut valid: bool = true; 
+
+    for tx in transactions.iter() {
+        match client.simulate_transaction_with_config(tx, config.clone()) {
+            Ok(sim_result) => {
+                if let Some(err) = sim_result.value.err {
+                    eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
+                    valid = false; 
+                } else {
+                    println!("✅ Transaction simulation successful");
+                }
+            }
+            Err(e) => {
+                eprintln!("🚨 Transaction simulation error: {:?}", e.to_string());
+            }
+        }
+    }
+    valid
+}

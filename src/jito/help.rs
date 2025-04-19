@@ -289,8 +289,6 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
         }
-
-        test_transactions(&self.client, &transactions).await; 
         transactions
     }
 
