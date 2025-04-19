@@ -142,7 +142,27 @@ pub async fn process_bundle(
     println!("Size of transaction to fund wallets: {:?}", size);
 
     if size <= 1232 {
-        jito.one_tx_bundle(fund_tx).await.unwrap();
+        for attempt in 1..=3 {
+            match jito.one_tx_bundle(fund_tx.clone()).await {
+                Ok(_) => {
+                    println!("Fund transaction confirmed"); 
+                    break; 
+                },
+                Err(e) => {
+                    let err_msg = format!("{:?}", e);
+                    if err_msg.contains("unable to confirm transaction") {
+                        println!(
+                            "Attempt {}/{} failed: {}. Retrying in 2s...",
+                            attempt, 3, e
+                        );
+                        sleep(Duration::from_secs(2));
+                    } else {
+                        // Other types of errors: break early
+                        println!("Unexpected error: {}", e);
+                    }
+                }
+            }
+        }
     } else {
         // Calculate number of transactions needed based on size
         let instructions_per_tx = 8;
@@ -197,9 +217,9 @@ pub async fn process_bundle(
         address_lookup_table_account,
         keypairs_with_amount,
         tip_account,
-        with_delay, 
+        with_delay,
         priority_fee,
-        jito_fee, 
+        jito_fee,
     );
 
     //Submitting first bundle
