@@ -159,3 +159,14 @@ pub struct Price {
 pub struct PriceResponse {
     pub price: u64,
 }
+
+
+#[derive(Deserialize, Debug)]
+pub struct CompleteRequest {
+    pub mint: String,
+}
+
+#[derive(Serialize)]
+pub struct CompleteResponse {
+    pub confirmed: bool,
+}

@@ -114,6 +114,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         )
         .route(
+            "/confirm",
+            post({
+                let handler_manager = Arc::clone(&handler_manager);
+                move |payload| {
+                    let handler_manager = Arc::clone(&handler_manager);
+                    async move { handler_manager.lock().await.complete_bundle(payload).await }
+                }
+            }),
+        )
+        .route(
             "/sell",
             post({
                 let handler_manager = Arc::clone(&handler_manager);

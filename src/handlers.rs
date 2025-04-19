@@ -1,8 +1,8 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
-    BumpRequest, BumpResponse, GetPoolInformationRequest, LutInit, LutRecord, LutResponse,
-    PoolInformation, Price, PriceResponse, RecursivePayRequest, SellAllRequest, SellResponse,
-    UniqueSellRequest, WithdrawAllSolRequest,
+    BumpRequest, BumpResponse, CompleteRequest, CompleteResponse, GetPoolInformationRequest,
+    LutInit, LutRecord, LutResponse, PoolInformation, Price, PriceResponse, RecursivePayRequest,
+    SellAllRequest, SellResponse, UniqueSellRequest, WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::utils::get_splits;
@@ -108,7 +108,11 @@ impl HandlerManager {
         };
 
         println!("Wallet buy amount: {:?}", payload.wallets_buy_amount);
-        let wallets_buy_amount = get_splits(payload.dev_buy_amount, payload.wallets_buy_amount, payload.split_percent);
+        let wallets_buy_amount = get_splits(
+            payload.dev_buy_amount,
+            payload.wallets_buy_amount,
+            payload.split_percent,
+        );
 
         //Get split length and break if more than 12
         println!("Wallets buy amount length: {:?}", wallets_buy_amount.len());
@@ -148,9 +152,9 @@ impl HandlerManager {
             wallets,
         };
 
-        let priority_fee = payload.fee; 
-        let jito_fee = payload.jito_tip; 
-        let with_delay = payload.with_delay; 
+        let priority_fee = payload.fee;
+        let jito_fee = payload.jito_tip;
+        let with_delay = payload.with_delay;
 
         // Spawn background processing of bundle in a separate task
         spawn(async move {
@@ -159,9 +163,9 @@ impl HandlerManager {
                 dev_keypair_with_amount,
                 &mint,
                 token_metadata,
-                priority_fee, 
-                jito_fee, 
-                with_delay
+                priority_fee,
+                jito_fee,
+                with_delay,
             )
             .await
             {
@@ -194,6 +198,23 @@ impl HandlerManager {
         let pool_information = pumpfun_client.get_pool_information(&mint).await.unwrap();
 
         Json(pool_information)
+    }
+
+    pub async fn complete_bundle(
+        &self,
+        Json(payload): Json<CompleteRequest>,
+    ) -> Json<CompleteResponse> {
+        let mint = Pubkey::from_str(&payload.mint).unwrap();
+        let loaded_admin_kp = Keypair::from_bytes(&self.admin_kp.to_bytes()).unwrap();
+        let payer: Arc<Keypair> = Arc::new(loaded_admin_kp);
+
+        let pumpfun_client = PumpFun::new(payer);
+
+        let confirmed: bool = pumpfun_client.is_token_live(&mint).await;
+
+        let response: CompleteResponse = CompleteResponse { confirmed };
+
+        Json(response)
     }
 
     pub async fn sell_for_keypair(
