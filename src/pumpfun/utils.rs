@@ -43,8 +43,8 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
             // Calculate base SOL per wallet
             let base_amount = remaining_sol / (number_of_wallets - i);
             
-            // Add random deviation between -30% to +30%
-            let deviation = (base_amount as f64 * (rng.gen_range(-30.0..30.0) / 100.0)) as u64;
+            // Add random deviation between -5% to +5%
+            let deviation = (base_amount as f64 * (rng.gen_range(-10.0..10.0) / 100.0)) as u64;
             let split_amount = base_amount.saturating_add(deviation);
             
             // Ensure we don't exceed remaining amount and leave enough for other wallets
