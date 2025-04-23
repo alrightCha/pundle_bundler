@@ -11,7 +11,7 @@ use solana_sdk::{
 
 use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
-
+use solana_sdk::address_lookup_table::state::AddressLookupTable; 
 use super::help::BundleTransactions;
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::params::KeypairWithAmount;
@@ -79,7 +79,7 @@ pub async fn process_bundle(
         .await
         .unwrap();
 
-    sleep(Duration::from_secs(5));
+    sleep(Duration::from_secs(10));
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     let admin_to_dev_ix: Instruction = transfer_ix(
@@ -117,26 +117,18 @@ pub async fn process_bundle(
 
     let txs: Vec<&[Instruction]> = instructions.chunks(4).collect();
 
-    let account_data = client.get_account_data(&lut_pubkey).unwrap();
+    let raw_account = client.get_account(&lut_pubkey).unwrap();
+    let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
-    let addresses: Vec<Pubkey> = account_data[LOOKUP_TABLE_META_SIZE..]
-        .chunks(32)
-        .map(|chunk| {
-            let mut array = [0u8; 32];
-            array.copy_from_slice(chunk);
-            Pubkey::new_from_array(array)
-        })
-        .collect();
-
-    let address_lookup_table_account: AddressLookupTableAccount = AddressLookupTableAccount {
+    let address_lookup_table_account = AddressLookupTableAccount {
         key: lut_pubkey,
-        addresses,
+        addresses: address_lookup_table.addresses.to_vec(),
     };
 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
     for tx in txs {
-        let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix]; 
+        let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix];
         with_tip_ixs.extend(tx);
         let new_tx = build_transaction(
             &client,
