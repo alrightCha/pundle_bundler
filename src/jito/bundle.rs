@@ -109,9 +109,12 @@ pub async fn process_bundle(
         ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
 
     //Instructions to send sol from admin to dev + keypairs
-    let mut instructions: Vec<Instruction> = vec![set_compute_unit_price_ix, admin_to_dev_ix];
+    let mut instructions: Vec<Instruction> = Vec::new();
+    instructions.push(admin_to_dev_ix);
     instructions.extend(admin_to_keypair_ixs);
     instructions.push(jito_tip_ix);
+
+    let txs: Vec<&[Instruction]> = instructions.chunks(4).collect();
 
     let account_data = client.get_account_data(&lut_pubkey).unwrap();
 
@@ -127,41 +130,27 @@ pub async fn process_bundle(
     let address_lookup_table_account: AddressLookupTableAccount = AddressLookupTableAccount {
         key: lut_pubkey,
         addresses,
-    }; 
+    };
 
-    // Calculate number of transactions needed based on size
-    let instructions_per_tx = 8;
-    let num_transactions = (instructions.len() / instructions_per_tx) as usize;
+    let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-    // Split instructions into chunks
-    let mut chunks: Vec<Vec<Instruction>> = Vec::new();
-    let mut start = 0;
-
-    for i in 0..num_transactions {
-        let end = if i == num_transactions - 1 {
-            instructions.len() // Last chunk gets remaining instructions
-        } else {
-            start + instructions_per_tx
-        };
-
-        let chunk = instructions[start..end].to_vec();
-
-        chunks.push(chunk);
-        start = end;
+    for tx in txs {
+        let new_tx = build_transaction(
+            &client,
+            tx,
+            vec![&admin_kp.insecure_clone()],
+            address_lookup_table_account.clone(),
+            &admin_kp,
+        );
+        transactions.push(new_tx);
     }
 
-    let mut txs: Vec<VersionedTransaction> = Vec::new();
+    test_transactions(&client, &transactions).await;
 
-    // Build and send each transaction
-    for chunk in chunks {
-        let lut: AddressLookupTableAccount = address_lookup_table_account.clone();
-        let tx = build_transaction(&client, &chunk, vec![&admin_kp], lut, &admin_kp);
-        txs.push(tx);
-    }
-
-    test_transactions(&client, &txs).await;
-
-    let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
+    let _ = jito
+        .submit_bundle(transactions, mint.pubkey(), None)
+        .await
+        .unwrap();
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())
