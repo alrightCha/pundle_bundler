@@ -79,6 +79,7 @@ pub async fn process_bundle(
         .await
         .unwrap();
 
+    sleep(Duration::from_secs(5));
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
 
     let admin_to_dev_ix: Instruction = transfer_ix(
@@ -135,6 +136,8 @@ pub async fn process_bundle(
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
     for tx in txs {
+        let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix]; 
+        with_tip_ixs.extend(tx);
         let new_tx = build_transaction(
             &client,
             tx,

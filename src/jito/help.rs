@@ -217,6 +217,7 @@ impl BundleTransactions {
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
                 transactions.push(new_tx);
+                tx_ixs = Vec::new(); 
                 break; 
             }
 
