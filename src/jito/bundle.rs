@@ -6,7 +6,7 @@ use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::{Transaction, VersionedTransaction},
+    transaction::VersionedTransaction,
 };
 
 use std::{env, sync::Arc, thread::sleep};
@@ -127,79 +127,46 @@ pub async fn process_bundle(
     let address_lookup_table_account: AddressLookupTableAccount = AddressLookupTableAccount {
         key: lut_pubkey,
         addresses,
-    };
+    }; 
 
-    let blockhash = client.get_latest_blockhash().unwrap();
+    // Calculate number of transactions needed based on size
+    let instructions_per_tx = 8;
+    let num_transactions = (instructions.len() / instructions_per_tx) as usize;
 
-    let fund_tx = Transaction::new_signed_with_payer(
-        &instructions,
-        Some(&admin_kp.pubkey()),
-        &[&admin_kp],
-        blockhash,
-    );
+    // Split instructions into chunks
+    let mut chunks: Vec<Vec<Instruction>> = Vec::new();
+    let mut start = 0;
 
-    let size: usize = bincode::serialized_size(&fund_tx).unwrap() as usize;
+    for i in 0..num_transactions {
+        let end = if i == num_transactions - 1 {
+            instructions.len() // Last chunk gets remaining instructions
+        } else {
+            start + instructions_per_tx
+        };
 
-    println!("Size of transaction to fund wallets: {:?}", size);
+        let chunk = instructions[start..end].to_vec();
 
-    if size <= 1232 {
-        for attempt in 1..=3 {
-            match jito.one_tx_bundle(fund_tx.clone()).await {
-                Ok(_) => {
-                    println!("Fund transaction confirmed");
-                    break;
-                }
-                Err(e) => {
-                    let err_msg = format!("{:?}", e);
-                    if err_msg.contains("unable to confirm transaction") {
-                        println!("Attempt {}/{} failed: {}. Retrying in 2s...", attempt, 3, e);
-                        sleep(Duration::from_secs(2));
-                    } else {
-                        // Other types of errors: break early
-                        println!("Unexpected error: {}", e);
-                    }
-                }
-            }
-        }
-    } else {
-        // Calculate number of transactions needed based on size
-        let instructions_per_tx = 8;
-        let num_transactions = (instructions.len() / instructions_per_tx) as usize;
-
-        // Split instructions into chunks
-        let mut chunks: Vec<Vec<Instruction>> = Vec::new();
-        let mut start = 0;
-
-        for i in 0..num_transactions {
-            let end = if i == num_transactions - 1 {
-                instructions.len() // Last chunk gets remaining instructions
-            } else {
-                start + instructions_per_tx
-            };
-
-            let chunk = instructions[start..end].to_vec();
-
-            chunks.push(chunk);
-            start = end;
-        }
-
-        let mut txs: Vec<VersionedTransaction> = Vec::new();
-        // Build and send each transaction
-        for chunk in chunks {
-            let lut: AddressLookupTableAccount = address_lookup_table_account.clone();
-            let tx = build_transaction(&client, &chunk, vec![&admin_kp], lut, &admin_kp);
-            txs.push(tx);
-        }
-        test_transactions(&client, &txs).await;
-        let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
+        chunks.push(chunk);
+        start = end;
     }
 
-    println!("Transaction built");
-    //let signature = client.send_and_confirm_transaction_with_spinner(&tx).unwrap();
+    let mut txs: Vec<VersionedTransaction> = Vec::new();
+
+    // Build and send each transaction
+    for chunk in chunks {
+        let lut: AddressLookupTableAccount = address_lookup_table_account.clone();
+        let tx = build_transaction(&client, &chunk, vec![&admin_kp], lut, &admin_kp);
+        txs.push(tx);
+    }
+
+    test_transactions(&client, &txs).await;
+
+    let _ = jito.submit_bundle(txs, mint.pubkey(), None).await.unwrap();
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())
         .unwrap();
+
     while dev_balance < dev_keypair_with_amount.amount {
         tokio::time::sleep(Duration::from_secs(3)).await;
         dev_balance = client
@@ -261,8 +228,8 @@ pub async fn process_bundle(
                                 sleep(Duration::from_millis(500));
                             }
                         }
-                    }else{
-                        println!("Valid delayed txs. Submitting bundle..."); 
+                    } else {
+                        println!("Valid delayed txs. Submitting bundle...");
                     }
 
                     let late_txs_chunks: Vec<Vec<VersionedTransaction>> =

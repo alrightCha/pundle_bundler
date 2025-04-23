@@ -1,5 +1,7 @@
+use solana_client::rpc_config::RpcSimulateTransactionConfig;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
+    commitment_config::CommitmentConfig,
     hash::Hash,
     instruction::Instruction,
     message::{v0::Message, VersionedMessage},
@@ -8,9 +10,7 @@ use solana_sdk::{
     signer::Signer,
     system_instruction,
     transaction::VersionedTransaction,
-    commitment_config::CommitmentConfig
 };
-use solana_client::rpc_config::RpcSimulateTransactionConfig;
 
 use anchor_spl::associated_token::get_associated_token_address;
 use anyhow::Result;
@@ -22,9 +22,19 @@ use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::result::Result::Ok;
+use std::env;
+
+pub fn get_admin_keypair() -> Keypair {
+    //Load admin keypair
+    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
+    load_keypair(&admin_keypair_path).unwrap()
+}
 
 //Create a keypair under the keys/requester/keypair_pubkey.json directory
-pub fn create_keypair(requester: &String, mint: &String) -> Result<Keypair, Box<dyn std::error::Error>> {
+pub fn create_keypair(
+    requester: &String,
+    mint: &String,
+) -> Result<Keypair, Box<dyn std::error::Error>> {
     let keypair = Keypair::new();
 
     // Create keys directory if it doesn't exist
@@ -35,7 +45,12 @@ pub fn create_keypair(requester: &String, mint: &String) -> Result<Keypair, Box<
     std::fs::create_dir_all(&requester_dir)?;
 
     // Create file path with keypair public key as filename
-    let file_path = format!("{}/{}/{}.json", requester_dir, mint.to_string(), keypair.pubkey());
+    let file_path = format!(
+        "{}/{}/{}.json",
+        requester_dir,
+        mint.to_string(),
+        keypair.pubkey()
+    );
 
     println!("Saving keypair to path: {}", file_path); // Debug print
 
@@ -99,7 +114,7 @@ pub fn build_transaction(
     }
 
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
-    
+
     let message = Message::try_compile(&payer.pubkey(), ixes, &[lut], blockhash).unwrap();
 
     // Compile the message with the payer's public key
@@ -126,7 +141,7 @@ pub fn get_slot_and_blockhash(
 
 pub fn get_keypairs_for_pubkey(
     pubkey: &String,
-    mint: &String
+    mint: &String,
 ) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
     let mut keypairs = Vec::new();
     let dir_path = format!("accounts/{}/{}", pubkey, mint);
@@ -182,7 +197,10 @@ pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedT
     }
 }
 
-pub async fn validate_delayed_txs(client: &RpcClient, transactions: &Vec<VersionedTransaction>) -> bool {
+pub async fn validate_delayed_txs(
+    client: &RpcClient,
+    transactions: &Vec<VersionedTransaction>,
+) -> bool {
     let config = RpcSimulateTransactionConfig {
         sig_verify: true,
         replace_recent_blockhash: false, // Disable blockhash replacement
@@ -190,14 +208,14 @@ pub async fn validate_delayed_txs(client: &RpcClient, transactions: &Vec<Version
         ..Default::default()
     };
 
-    let mut valid: bool = true; 
+    let mut valid: bool = true;
 
     for tx in transactions.iter() {
         match client.simulate_transaction_with_config(tx, config.clone()) {
             Ok(sim_result) => {
                 if let Some(err) = sim_result.value.err {
                     eprintln!("❌ Transaction failed simulation: {:?}", err.to_string());
-                    valid = false; 
+                    valid = false;
                 } else {
                     println!("✅ Transaction simulation successful");
                 }
