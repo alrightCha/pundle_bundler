@@ -201,11 +201,6 @@ impl BundleTransactions {
                 buyer.keypair.pubkey().to_string()
             );
 
-            if index == MAX_BUYERS_FIRST_BUNDLE {
-                // break at 23rd keypair. can treat total of 24 buyers 19 + 3 = 22, starting at 0 gives 23 keypairs.
-                break;
-            }
-
             let buy_ixs = self
                 .pumpfun_client
                 .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
@@ -220,6 +215,9 @@ impl BundleTransactions {
                 // last item or 23rd item of list
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
+                let new_tx = self.get_tx(&tx_ixs, false);
+                transactions.push(new_tx);
+                break; 
             }
 
             // Every 5 buyers, create new transaction

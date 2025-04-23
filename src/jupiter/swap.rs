@@ -1,16 +1,24 @@
-use std::str::FromStr;
-use jup_ag::{QuoteConfig, SwapRequest};
-use solana_sdk::{pubkey::Pubkey, signature::{Keypair, Signer}, system_instruction::transfer};
-use spl_token::amount_to_ui_amount;
-use solana_sdk::instruction::Instruction;
 use crate::config::ADMIN_PUBKEY;
+use jup_ag::{QuoteConfig, SwapRequest};
+use solana_sdk::instruction::Instruction;
+use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    system_instruction::transfer,
+};
+use spl_token::amount_to_ui_amount;
+use std::str::FromStr;
 
-
-pub async fn swap_ixs(keypair: &Keypair, base_mint: Pubkey, amount: u64, slippage_bps: Option<u64>) -> Result<Vec<Instruction>, Box<dyn std::error::Error>> {
-    
+pub async fn swap_ixs(
+    keypair: &Keypair,
+    base_mint: Pubkey,
+    amount: u64,
+    slippage_bps: Option<u64>,
+) -> Result<Vec<Instruction>, Box<dyn std::error::Error>> {
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = true; //Might need to change this 
+    let only_direct_routes = true; //Might need to change this
 
     let quotes = jup_ag::quote(
         base_mint,
@@ -52,7 +60,7 @@ pub async fn swap_ixs(keypair: &Keypair, base_mint: Pubkey, amount: u64, slippag
         instructions.push(cleanup_instruction);
     }
 
-    let tax_amount = quotes.out_amount / 100; 
+    let tax_amount = quotes.out_amount / 100;
 
     let tax_ix = transfer(
         &keypair.pubkey(),
@@ -64,10 +72,13 @@ pub async fn swap_ixs(keypair: &Keypair, base_mint: Pubkey, amount: u64, slippag
     Ok(instructions)
 }
 
-pub async fn sol_for_tokens(base_mint: Pubkey, amount: u64) -> Result<u64, Box<dyn std::error::Error>> {
-    let amount_decimals = amount * 1_000_000; // 6 decimals 
+pub async fn sol_for_tokens(
+    base_mint: Pubkey,
+    amount: u64,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let amount_decimals = amount * 1_000_000; // 6 decimals
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
-    let only_direct_routes = true; 
+    let only_direct_routes = true;
     let slippage_bps = 100;
     let quotes = jup_ag::quote(
         base_mint,
@@ -81,6 +92,6 @@ pub async fn sol_for_tokens(base_mint: Pubkey, amount: u64) -> Result<u64, Box<d
     )
     .await?;
 
-    let amount_sol = quotes.out_amount; 
+    let amount_sol = quotes.out_amount;
     Ok(amount_sol)
 }
