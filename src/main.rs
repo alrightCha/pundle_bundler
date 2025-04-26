@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mint: "yVsfpmgCDbMHNnhithdfnHDRFookNiVLzUv5jrJAWPp".to_string(),
         admin: true,
     };
-    
+
     pubkey_to_lut.lock().await.insert(
         "yVsfpmgCDbMHNnhithdfnHDRFookNiVLzUv5jrJAWPp".to_string(),
         new_lut,

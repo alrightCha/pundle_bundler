@@ -40,6 +40,7 @@ pub async fn sell_all_txs(
 
     let mut tips_count = 0;
     let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
+
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 

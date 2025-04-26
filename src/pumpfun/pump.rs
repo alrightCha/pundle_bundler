@@ -167,7 +167,7 @@ impl PumpFun {
 
         // Add ata instruction or get acc if available
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
-        println!("PUBKEY: {:?} ATA: {:?}", keypair.pubkey().to_string(),  ata);
+        println!("PUBKEY: {:?} ATA: {:?}", keypair.pubkey().to_string(), ata);
 
         if self.rpc.get_account(&ata).await.is_err() {
             let create_ata_ix = create_associated_token_account(
@@ -208,35 +208,33 @@ impl PumpFun {
         Ok(instructions)
     }
 
-     /// Get all addresses to push to lut to optimize it for interacting with pumpfun instructions
+    /// Get all addresses to push to lut to optimize it for interacting with pumpfun instructions
     ///
     /// # Arguments
     ///
     /// * `mint` - Public key of the token mint to sell
     ///
-    /// # Returns vec of public keys to extend 
-    /// # Note 
-    /// Should not have well known accounts and system programs should not be in lut 
-    /// From Solana's documentation: The addresses of programs that are invoked in the transaction (i.e., the program IDs of each instruction) must be present in the static account keys and cannot be loaded through an address table lookup. So any program ID that's part of an instruction's program_id field must be present in the static list, not via LUT. 
+    /// # Returns vec of public keys to extend
+    /// # Note
+    /// Should not have well known accounts and system programs should not be in lut
+    /// From Solana's documentation: The addresses of programs that are invoked in the transaction (i.e., the program IDs of each instruction) must be present in the static account keys and cannot be loaded through an address table lookup. So any program ID that's part of an instruction's program_id field must be present in the static list, not via LUT.
     /// Returns the sell transaction request builder
-    /// 
+    ///
     pub async fn get_addresse_for_lut(&self, mint: &Pubkey) -> Vec<Pubkey> {
-
         //AUTHORITY & FEE RECIPIENT
         let global_fee_recipient: Pubkey = self.get_global_account().await.unwrap().fee_recipient;
         let auth: Pubkey = pumpfun::constants::accounts::EVENT_AUTHORITY;
 
-        //let pump: Pubkey = pumpfun::constants::accounts::PUMPFUN; // Should add ? 
+        //let pump: Pubkey = pumpfun::constants::accounts::PUMPFUN; // Should add ?
 
         //PDAS
-        let mint_authority_pda: Pubkey = Self::get_mint_authority_pda(); 
-        let metadata_pda: Pubkey = Self::get_metadata_pda(&mint); 
+        let mint_authority_pda: Pubkey = Self::get_mint_authority_pda();
+        let metadata_pda: Pubkey = Self::get_metadata_pda(&mint);
         let global_pda: Pubkey = self.get_global_pda();
         let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
 
         //ATA
-        let ata: Pubkey = get_associated_token_address(&bonding_curve, &mint); 
-
+        let ata: Pubkey = get_associated_token_address(&bonding_curve, &mint);
 
         vec![
             global_fee_recipient,
@@ -248,7 +246,6 @@ impl PumpFun {
             metadata_pda,
         ]
     }
-
 
     /// Sells tokens back to the bonding curve in exchange for SOL
     ///
@@ -454,14 +451,10 @@ impl PumpFun {
             .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
-        let data_array: &[u8; 512] = account.data.as_slice().try_into().unwrap();
-        match pumpfun::accounts::GlobalAccount::deserialize(&mut &data_array[..]) {
-            Ok(global_account) => Ok(global_account),
-            Err(e) => {
-                println!("Borsh deserialization error: {:?}", e);
-                Err(pumpfun::error::ClientError::BorshError(e))
-            }
-        }
+        solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::GlobalAccount>(
+            &account.data,
+        )
+        .map_err(pumpfun::error::ClientError::BorshError)
     }
 
     /// Gets the Program Derived Address (PDA) for the global state account
@@ -504,7 +497,8 @@ impl PumpFun {
         &self,
         mint: &Pubkey,
     ) -> Result<pumpfun::accounts::BondingCurveAccount, pumpfun::error::ClientError> {
-        let bonding_curve_pda = self.get_bonding_curve_pda(mint)
+        let bonding_curve_pda = self
+            .get_bonding_curve_pda(mint)
             .ok_or(pumpfun::error::ClientError::BondingCurveNotFound)?;
 
         let account = self
