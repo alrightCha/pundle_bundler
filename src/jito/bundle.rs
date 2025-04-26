@@ -136,10 +136,10 @@ pub async fn process_bundle(
 
     test_transactions(&client, &transactions).await;
 
-    let _ = jito
-        .submit_bundle(transactions, mint.pubkey(), None)
-        .await
-        .unwrap();
+    match jito.submit_bundle(transactions, mint.pubkey(), None).await {
+        Ok(_) => println!("Successfully submitted initial bundle"),
+        Err(e) => println!("Error submitting initial bundle: {}", e.to_string()),
+    };
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())
