@@ -27,7 +27,6 @@ use handlers::{
     pay_recursive, sell_all_leftover_tokens, sell_for_keypair, setup_lut_record, withdraw_all_sol,
 };
 
-use crate::solana::refund::refund_keypairs;
 use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -43,25 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::from((ip_address, PORT));
 
-    let admin_keypair = get_admin_keypair();
-
     //Storing LUT to access it across handlers
     let pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
-    let new_lut = Pubkey::from_str("hEcKEgCXAEgr56SatwCxQtzGsXKdXWkuhRZ4aW1jQvb").unwrap();
-
-    let sell_all: SellAllRequest = SellAllRequest {
-        pubkey: "FGSccTymvdCUJj5tFw7JFLAQamrBW4LLK3HT8f3p9YJc".to_string(),
-        mint: "yVsfpmgCDbMHNnhithdfnHDRFookNiVLzUv5jrJAWPp".to_string(),
-        admin: true,
-    };
-
-    pubkey_to_lut.lock().await.insert(
-        "yVsfpmgCDbMHNnhithdfnHDRFookNiVLzUv5jrJAWPp".to_string(),
-        new_lut,
-    );
 
     let lut_pub = Arc::clone(&pubkey_to_lut); 
-    let _ = sell_all_leftover_tokens(lut_pub, axum::Json(sell_all)).await;
     
     //setup app
     let app = Router::new()
