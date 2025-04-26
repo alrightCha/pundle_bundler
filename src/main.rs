@@ -11,8 +11,6 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
-use solana::utils::load_keypair;
-use solana_sdk::signer::Signer;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
