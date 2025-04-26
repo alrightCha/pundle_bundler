@@ -276,6 +276,7 @@ pub async fn sell_all_leftover_tokens(
     let mint: String = payload.mint;
     let mint_pubkey: Pubkey = Pubkey::from_str(&mint).unwrap();
 
+    println!("Mint Pubkey: {:?}", mint_pubkey.to_string()); 
     let unlocked_lut = pubkey_to_lut.lock().await;
     let lut_account_pubkey = unlocked_lut.get(&mint);
 
