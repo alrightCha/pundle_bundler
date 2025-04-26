@@ -3,9 +3,7 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use jito_sdk_rust::JitoJsonRpcSDK;
 use serde_json::json;
-use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
     instruction::Instruction,
     pubkey::Pubkey,
     system_instruction,
@@ -18,7 +16,6 @@ use super::utils::check_final_bundle_status;
 
 pub struct JitoBundle {
     jito_sdk: JitoJsonRpcSDK,
-    solana_rpc: RpcClient,
     max_retries: u32,
     jito_tip_amount: u64,
 }
@@ -31,11 +28,10 @@ pub struct JitoBundle {
 //Check if is busy with a bundle
 
 impl JitoBundle {
-    pub fn new(solana_rpc: RpcClient, max_retries: u32, jito_tip_amount: u64) -> Self {
+    pub fn new(max_retries: u32, jito_tip_amount: u64) -> Self {
         let jito_sdk = JitoJsonRpcSDK::new("https://mainnet.block-engine.jito.wtf/api/v1", None);
         Self {
             jito_sdk,
-            solana_rpc,
             max_retries,
             jito_tip_amount,
         }
@@ -90,41 +86,6 @@ impl JitoBundle {
         println!("Transaction sent with signature: {}", signature);
 
         Ok(signature.to_string())
-    }
-
-    //Requires that transaction is already signed
-    pub async fn one_tx_bundle(&self, transaction: Transaction) -> Result<()> {
-        let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction)?);
-        let serialized_tx_size = serialized_tx.len();
-        println!("Transaction size in bytes: {}", serialized_tx_size);
-        // Send transaction using Jito SDK
-        println!("Sending transaction...");
-
-        let params = json!({
-            "tx": serialized_tx
-        });
-
-        let response = self.jito_sdk.send_txn(Some(params), true).await?;
-
-        // Extract signature from response
-        let signature = response["result"]
-            .as_str()
-            .ok_or_else(|| anyhow!("Failed to get signature from response"))?;
-        println!("Transaction sent with signature: {}", signature);
-
-        // Confirm transaction
-        let confirmation = self.solana_rpc.confirm_transaction_with_spinner(
-            &signature.parse()?,
-            &self.solana_rpc.get_latest_blockhash()?,
-            CommitmentConfig::finalized(),
-        )?;
-        println!("Transaction confirmed: {:?}", confirmation);
-
-        println!(
-            "View transaction on Solscan: https://solscan.io/tx/{}",
-            signature
-        );
-        Ok(())
     }
 
     pub async fn submit_bundle(

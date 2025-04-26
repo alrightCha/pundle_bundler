@@ -65,13 +65,8 @@ impl BundleTransactions {
         jito_fee: u64,
     ) -> Self {
         let client: RpcClient = RpcClient::new(RPC_URL);
-
-        let jito_rpc: RpcClient = RpcClient::new_with_commitment(
-            RPC_URL.to_string(),
-            solana_sdk::commitment_config::CommitmentConfig::confirmed(),
-        );
-
-        let jito: JitoBundle = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
+        
+        let jito: JitoBundle = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
         let dev: Keypair = dev_keypair.insecure_clone();
         let payer: Arc<Keypair> = Arc::new(dev);

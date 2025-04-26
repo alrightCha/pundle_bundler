@@ -11,6 +11,8 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
+use solana::utils::get_admin_keypair;
+use solana_sdk::signer::Signer;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
@@ -28,6 +30,7 @@ use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::Mutex;
+use crate::solana::refund::refund_keypairs;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +42,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::from((ip_address, PORT));
 
-    //refund_keypairs("EzYBEUw6FL9h6hpT1fM91TuX9DsTwA7ASn1Gs9viBsbr".to_string(), admin_keypair.pubkey().to_string(), "".to_string()).await;
+    let admin_keypair = get_admin_keypair(); 
+
+    refund_keypairs("FGSccTymvdCUJj5tFw7JFLAQamrBW4LLK3HT8f3p9YJc".to_string(), admin_keypair.pubkey().to_string(), "bmAotZ5EWysKvpAXvGDtYPoQiXxaWxjFdUt4g4CNTBp".to_string()).await;
     //Storing LUT to access it across handlers
     let pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
 

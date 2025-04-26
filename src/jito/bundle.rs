@@ -2,16 +2,13 @@ use dotenv::dotenv;
 use reqwest::Client as HttpClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
-    address_lookup_table::{state::LOOKUP_TABLE_META_SIZE, AddressLookupTableAccount},
+    address_lookup_table::AddressLookupTableAccount,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::VersionedTransaction,
 };
 
-use std::{env, sync::Arc, thread::sleep};
-use tokio::time::Duration;
-use solana_sdk::address_lookup_table::state::AddressLookupTable; 
 use super::help::BundleTransactions;
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::params::KeypairWithAmount;
@@ -24,6 +21,9 @@ use crate::solana::{
 use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
+use std::{env, sync::Arc, thread::sleep};
+use tokio::time::Duration;
 
 pub async fn process_bundle(
     keypairs_with_amount: Vec<KeypairWithAmount>,
@@ -35,18 +35,12 @@ pub async fn process_bundle(
     with_delay: bool,
 ) -> Result<Pubkey, Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
-
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
     let admin_kp = load_keypair(&admin_keypair_path).unwrap();
 
     let client = RpcClient::new(RPC_URL);
 
-    let jito_rpc = RpcClient::new_with_commitment(
-        RPC_URL.to_string(),
-        solana_sdk::commitment_config::CommitmentConfig::confirmed(),
-    );
-
-    let jito = JitoBundle::new(jito_rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
+    let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
     let payer: Arc<Keypair> = Arc::new(admin_kp.insecure_clone());
 
@@ -181,8 +175,7 @@ pub async fn process_bundle(
         let admin_kp = load_keypair(&admin_keypair_path).unwrap();
         let payer: Arc<Keypair> = Arc::new(admin_kp);
         let pumpfun_client = PumpFun::new(payer);
-        let rpc = RpcClient::new(RPC_URL);
-        let jito = JitoBundle::new(rpc, MAX_RETRIES, JITO_TIP_AMOUNT);
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
         tokio::spawn(async move {
             let start_time = std::time::Instant::now();
@@ -236,11 +229,27 @@ pub async fn process_bundle(
         });
     }
 
-    // Only send first chunk for testing
-    let _ = jito
-        .submit_bundle(first_bundle, mint.pubkey(), Some(&pumpfun_client))
-        .await
-        .unwrap();
+    // Submit first bundle with retries
+    let mut success = false;
+    for retry in 1..=3 {
+        match jito.submit_bundle(first_bundle.clone(), mint.pubkey(), Some(&pumpfun_client)).await {
+            Ok(_) => {
+                success = true;
+                break;
+            }
+            Err(error) => {
+                println!("Error submitting first bundle, retry {}/3", retry);
+                println!("Error: {}", error.to_string());
+                if retry < 3 {
+                    sleep(Duration::from_secs(3));
+                }
+            }
+        }
+    }
+
+    if !success {
+        println!("Failed to submit first bundle after 3 retries");
+    }
 
     println!("Making callback to orchestrator...");
     // Fire and forget the callback

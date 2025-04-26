@@ -242,7 +242,7 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
         };
 
         let blockhash = client.get_latest_blockhash().unwrap();
-        let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
         let tip_ix = jito.get_tip_ix(keypair.pubkey(), None).await.unwrap();
 
         let mut instructions: Vec<Instruction> = Vec::new();
@@ -351,8 +351,7 @@ pub async fn sell_all_leftover_tokens(
     };
 
     if total_token_balance > 1000.0 {
-        let client = RpcClient::new(RPC_URL);
-        let jito = JitoBundle::new(client, MAX_RETRIES, JITO_TIP_AMOUNT);
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
         let chunks: Vec<_> = txs.chunks(5).collect();
         for chunk in chunks {
             let chunk_vec = chunk.to_vec();
