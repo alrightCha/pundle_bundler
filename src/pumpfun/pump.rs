@@ -507,7 +507,7 @@ impl PumpFun {
             .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
-        pumpfun::accounts::BondingCurveAccount::try_from_slice(&account.data)
+        solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::BondingCurveAccount>(&account.data)
             .map_err(pumpfun::error::ClientError::BorshError)
     }
 
