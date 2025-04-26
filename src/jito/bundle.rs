@@ -136,10 +136,26 @@ pub async fn process_bundle(
 
     test_transactions(&client, &transactions).await;
 
-    match jito.submit_bundle(transactions, mint.pubkey(), None).await {
-        Ok(_) => println!("Successfully submitted initial bundle"),
-        Err(e) => println!("Error submitting initial bundle: {}", e.to_string()),
-    };
+     // Submit first bundle with retries
+     for retry in 1..=3 {
+        match jito.submit_bundle(transactions.clone(), mint.pubkey(), None).await {
+             Ok(_) => {
+                 break;
+             }
+             Err(error) => {
+                 println!("Error submitting funding bundle, retry {}/3", retry);
+                 println!("Error: {}", error.to_string());
+                 sleep(Duration::from_secs(3));
+                 let dev_balance = client
+                 .get_balance(&dev_keypair_with_amount.keypair.pubkey())
+                 .unwrap();
+                if dev_balance > 0 {
+                    break; 
+                }
+             }
+         }
+     }
+
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())
