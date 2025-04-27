@@ -1,6 +1,8 @@
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::jito::jito::JitoBundle;
-use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; // For parsing JSON files
+use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; 
+use base64::{Engine as _, engine::general_purpose};
+// For parsing JSON files
 use dotenv::dotenv;
 use jito_sdk_rust::JitoJsonRpcSDK;
 use serde_json::json;
@@ -196,8 +198,7 @@ pub async fn recursive_pay(
             println!("Signers: {:?}", signing.iter().map(|kp| kp.pubkey()));
             transaction.sign(&signing, blockhash);
             // Serialize the transaction
-            let serialized_tx =
-                bs58::encode(bincode::serialize(&transaction).unwrap()).into_string();
+            let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction).unwrap());
             txs.push(serialized_tx);
             current_tx_ixs = Vec::new();
             current_tx_ixs.push(ix.clone());
@@ -220,7 +221,7 @@ pub async fn recursive_pay(
         let signing: Vec<&Keypair> = tx_signers.iter().collect();
         transaction.sign(&signing, blockhash);
         println!("Signers: {:?}", signing.iter().map(|kp| kp.pubkey()));
-        let serialized_tx = bs58::encode(bincode::serialize(&transaction).unwrap()).into_string();
+        let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction).unwrap());
         txs.push(serialized_tx);
     }
     // Prepare bundle for submission (array of transactions)
@@ -237,7 +238,7 @@ pub async fn recursive_pay(
     let jito_validate = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT); 
 
     let res = jito_validate.validate_bundle(None, Pubkey::default(), result).await; 
-    
+
         //TODO: IF FALSE, FIND A WAY TO MAKE IT TRUE
     match res {
         Ok(_) => true,

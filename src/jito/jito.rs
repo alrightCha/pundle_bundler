@@ -134,7 +134,7 @@ impl JitoBundle {
         //TODO: Check if this step is necessary
         let serialized_txs: Vec<String> = transactions
             .into_iter()
-            .map(|tx| bs58::encode(bincode::serialize(&tx).unwrap()).into_string())
+            .map(|tx| general_purpose::STANDARD.encode(bincode::serialize(&tx).unwrap()))
             .collect();
 
         let bundle = json!(serialized_txs);
@@ -164,10 +164,7 @@ impl JitoBundle {
                 attempt, self.max_retries
             );
 
-            let status_response = self
-                .jito_sdk
-                .get_in_flight_bundle_statuses(vec![bundle_uuid.to_string()])
-                .await?;
+            let status_response = self.jito_sdk.get_in_flight_bundle_statuses(vec![bundle_uuid.to_string()]).await?;
 
             if let Some(result) = status_response.get("result") {
                 if let Some(value) = result.get("value") {
