@@ -73,8 +73,10 @@ impl JitoBundle {
 
         // Send transaction using Jito SDK
         println!("Sending transaction...");
+
+        let txs = json!(serialized_tx); 
         let params = json!([
-            serialized_tx,
+            txs,
             {
                 "encoding": "base64"
             }
@@ -140,12 +142,14 @@ impl JitoBundle {
             .map(|tx| general_purpose::STANDARD.encode(bincode::serialize(&tx).unwrap()))
             .collect();
 
-            let bundle = json!([
-                serialized_txs,
-                {
-                    "encoding": "base64"
-                }
-            ]);
+        let txs = json!(serialized_txs); 
+
+        let bundle = json!([
+            txs,
+            {
+                "encoding": "base64"
+            }
+        ]);
 
         // UUID for the bundle
         let uuid = None;
@@ -155,7 +159,12 @@ impl JitoBundle {
         self.validate_bundle(pumpfun_client, mint, response).await
     }
 
-    pub async fn validate_bundle(&self, pumpfun_client: Option<&PumpFun>, mint: Pubkey, response: Value) -> Result<()> {
+    pub async fn validate_bundle(
+        &self,
+        pumpfun_client: Option<&PumpFun>,
+        mint: Pubkey,
+        response: Value,
+    ) -> Result<()> {
         // Extract bundle UUID from response
         let bundle_uuid = response["result"]
             .as_str()
@@ -172,7 +181,10 @@ impl JitoBundle {
                 attempt, self.max_retries
             );
 
-            let status_response = self.jito_sdk.get_in_flight_bundle_statuses(vec![bundle_uuid.to_string()]).await?;
+            let status_response = self
+                .jito_sdk
+                .get_in_flight_bundle_statuses(vec![bundle_uuid.to_string()])
+                .await?;
 
             if let Some(result) = status_response.get("result") {
                 if let Some(value) = result.get("value") {

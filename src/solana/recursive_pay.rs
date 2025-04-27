@@ -224,9 +224,12 @@ pub async fn recursive_pay(
         let serialized_tx = general_purpose::STANDARD.encode(bincode::serialize(&transaction).unwrap());
         txs.push(serialized_tx);
     }
+
+    let json_txs = json!(txs); 
+
     // Prepare bundle for submission (array of transactions)
     let bundle = json!([
-        txs,
+        json_txs,
         {
             "encoding": "base64"
         }
