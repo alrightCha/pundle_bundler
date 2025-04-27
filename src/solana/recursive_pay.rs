@@ -225,7 +225,12 @@ pub async fn recursive_pay(
         txs.push(serialized_tx);
     }
     // Prepare bundle for submission (array of transactions)
-    let bundle = json!(txs);
+    let bundle = json!([
+        txs,
+        {
+            "encoding": "base64"
+        }
+    ]);
     // Send bundle using Jito SDK
     println!("Sending bundle with 1 transaction...");
     // UUID for the bundle
