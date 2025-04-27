@@ -222,6 +222,7 @@ pub async fn sell_all_txs(
             tips_count += 1;
         }
     }
+    
     print!(
         "Sending {:?} sell transactions with {:?} tip instructions",
         transactions.len(),

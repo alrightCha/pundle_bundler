@@ -226,12 +226,13 @@ pub async fn recursive_pay(
     }
 
     // Prepare bundle for submission (array of transactions)
-    let bundle = json!([
+    let params = json!([
         txs,
         {
             "encoding": "base64"
         }
     ]);
+
     // Send bundle using Jito SDK
     println!("Sending bundle with 1 transaction...");
     // UUID for the bundle
@@ -239,7 +240,7 @@ pub async fn recursive_pay(
 
     // Send bundle using Jito SDK
     println!("Sending bundle with 1 transaction...");
-    let result = jito_sdk.send_bundle(Some(bundle), uuid).await.unwrap();
+    let result = jito_sdk.send_bundle(Some(params), uuid).await.unwrap();
     
     let jito_validate = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT); 
 
