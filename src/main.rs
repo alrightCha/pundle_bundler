@@ -7,13 +7,10 @@ mod pumpfun;
 mod solana;
 
 use std::sync::Arc;
-
+use tokio::sync::RwLock;
 use axum::routing::{get, post};
 use axum::Router;
 use config::PORT;
-use params::SellAllRequest;
-use solana::utils::get_admin_keypair;
-use solana_sdk::signer::Signer;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
@@ -30,7 +27,8 @@ use handlers::{
 use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::sync::Mutex;
+
+pub type SharedLut = Arc<RwLock<HashMap<String, Pubkey>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,9 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from((ip_address, PORT));
 
     //Storing LUT to access it across handlers
-    let pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>> = Arc::new(Mutex::new(HashMap::new()));
-
-    let lut_pub = Arc::clone(&pubkey_to_lut); 
+    let pubkey_to_lut: SharedLut = Arc::new(RwLock::new(HashMap::new()));
     
     //setup app
     let app = Router::new()
@@ -53,15 +49,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/post-bundle",
             post({
-                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
-                async move |payload| handle_post_bundle(pubkey_to_lut, payload).await
+                let lut = Arc::clone(&pubkey_to_lut);
+                async move |payload| {
+                    handle_post_bundle(lut, payload).await
+                }
             }),
         )
         .route(
             "/lut",
             post({
-                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
-                async move |payload| setup_lut_record(pubkey_to_lut, payload).await
+                let lut = Arc::clone(&pubkey_to_lut);
+                async move |payload| {
+                    setup_lut_record(lut, payload).await
+                }
             }),
         )
         .route(
@@ -79,8 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/sell-all",
             post({
-                let pubkey_to_lut = Arc::clone(&pubkey_to_lut);
-                async move |payload| sell_all_leftover_tokens(pubkey_to_lut, payload).await
+                let lut = Arc::clone(&pubkey_to_lut);
+                async move |payload| {
+                    sell_all_leftover_tokens(lut, payload).await
+                }
             }),
         )
         .route(

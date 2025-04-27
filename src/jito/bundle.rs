@@ -119,43 +119,44 @@ pub async fn process_bundle(
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
-    let mut transactions: Vec<VersionedTransaction> = Vec::new();
+    // Submit first bundle with retries
+    for retry in 1..=3 {
+        let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-    for tx in txs {
-        let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix];
-        with_tip_ixs.extend(tx);
-        let new_tx = build_transaction(
-            &client,
-            tx,
-            vec![&admin_kp.insecure_clone()],
-            address_lookup_table_account.clone(),
-            &admin_kp,
-        );
-        transactions.push(new_tx);
-    }
+        for tx in &txs {
+            let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix];
+            with_tip_ixs.extend(*tx);
+            let new_tx = build_transaction(
+                &client,
+                tx,
+                vec![&admin_kp.insecure_clone()],
+                address_lookup_table_account.clone(),
+                &admin_kp,
+            );
+            transactions.push(new_tx);
+        }
 
-    test_transactions(&client, &transactions).await;
-
-     // Submit first bundle with retries
-     for retry in 1..=3 {
-        match jito.submit_bundle(transactions.clone(), mint.pubkey(), None).await {
-             Ok(_) => {
-                 break;
-             }
-             Err(error) => {
-                 println!("Error submitting funding bundle, retry {}/3", retry);
-                 println!("Error: {}", error.to_string());
-                 sleep(Duration::from_secs(3));
-                 let dev_balance = client
-                 .get_balance(&dev_keypair_with_amount.keypair.pubkey())
-                 .unwrap();
+        test_transactions(&client, &transactions).await;
+        match jito
+            .submit_bundle(transactions.clone(), mint.pubkey(), None)
+            .await
+        {
+            Ok(_) => {
+                break;
+            }
+            Err(error) => {
+                println!("Error submitting funding bundle, retry {}/3", retry);
+                println!("Error: {}", error.to_string());
+                sleep(Duration::from_secs(3));
+                let dev_balance = client
+                    .get_balance(&dev_keypair_with_amount.keypair.pubkey())
+                    .unwrap();
                 if dev_balance > 0 {
-                    break; 
+                    break;
                 }
-             }
-         }
-     }
-
+            }
+        }
+    }
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())
@@ -248,7 +249,10 @@ pub async fn process_bundle(
     // Submit first bundle with retries
     let mut success = false;
     for retry in 1..=3 {
-        match jito.submit_bundle(first_bundle.clone(), mint.pubkey(), Some(&pumpfun_client)).await {
+        match jito
+            .submit_bundle(first_bundle.clone(), mint.pubkey(), Some(&pumpfun_client))
+            .await
+        {
             Ok(_) => {
                 success = true;
                 break;
@@ -257,7 +261,7 @@ pub async fn process_bundle(
                 println!("Error submitting first bundle, retry {}/3", retry);
                 println!("Error: {}", error.to_string());
                 if retry < 3 {
-                    sleep(Duration::from_secs(3));
+                    sleep(Duration::from_secs(1));
                 }
             }
         }

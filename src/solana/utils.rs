@@ -133,7 +133,7 @@ pub fn build_transaction(
 
 pub fn get_slot_and_blockhash(
     client: &RpcClient,
-) -> Result<(u64, Hash), Box<dyn std::error::Error>> {
+) -> Result<(u64, Hash), Box<dyn std::error::Error + Send + Sync>> {
     let blockhash = client.get_latest_blockhash()?;
     let slot = client.get_slot()?;
     Ok((slot, blockhash))
@@ -142,7 +142,7 @@ pub fn get_slot_and_blockhash(
 pub fn get_keypairs_for_pubkey(
     pubkey: &String,
     mint: &String,
-) -> Result<Vec<Keypair>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Keypair>, Box<dyn std::error::Error + Send + Sync>> {
     let mut keypairs = Vec::new();
     let dir_path = format!("accounts/{}/{}", pubkey, mint);
     let dir_entries = std::fs::read_dir(dir_path)?;
@@ -166,11 +166,13 @@ pub fn get_keypairs_for_pubkey(
     Ok(keypairs)
 }
 
-pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubkey) -> u64 {
-    let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
-    let balance = client.get_token_account_balance(&ata).unwrap();
-    let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
-    balance_u64
+pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubkey) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    let ata = get_associated_token_address(&keypair.pubkey(), mint);
+
+    let balance = client.get_token_account_balance(&ata)?;
+    let balance_u64 = balance.amount.parse::<u64>()?;
+
+    Ok(balance_u64)
 }
 
 pub async fn test_transactions(client: &RpcClient, transactions: &Vec<VersionedTransaction>) {

@@ -6,7 +6,6 @@ use crate::solana::utils::{build_transaction, get_ata_balance, load_keypair, tes
 use dotenv::dotenv;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::{
     address_lookup_table::state::AddressLookupTable,
     address_lookup_table::AddressLookupTableAccount,
@@ -67,9 +66,13 @@ pub async fn sell_all_txs(
     //BUILD INSTRUCTIONS
 
     let token_bonded = pumpfun_client
+
         .get_pool_information(mint_pubkey)
+
         .await
+
         .unwrap()
+
         .is_bonding_curve_complete;
 
     let mut ixs: Vec<Instruction> = Vec::new();
@@ -82,8 +85,7 @@ pub async fn sell_all_txs(
 
         let new_ixs: Option<Vec<Instruction>> = match token_bonded {
             true => {
-                let amount = get_ata_balance(&client, &keypair, &mint_pubkey).await;
-                let swap_ixs = swap_ixs(&keypair, *mint_pubkey, amount, None)
+                let swap_ixs = swap_ixs(&keypair, *mint_pubkey, None, None)
                     .await
                     .unwrap();
                 Some(swap_ixs)
@@ -273,7 +275,7 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
         }
     } else {
         let price = pool_info.sell_price;
-        let sol_amount = (price * amount) / 100_000; //Returns amount in lamports 100_000 because sell_price is per 100 000 tokens 
+        let sol_amount = (price * amount) / 100_000; //Returns amount in lamports 100_000 because sell_price is per 100 000 tokens
         amount_sol = sol_amount;
     }
     amount_sol

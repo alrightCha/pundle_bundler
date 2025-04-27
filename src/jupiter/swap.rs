@@ -1,7 +1,9 @@
-use crate::config::ADMIN_PUBKEY;
+use crate::config::{ADMIN_PUBKEY, RPC_URL};
 use jup_ag::{QuoteConfig, SwapRequest};
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use crate::solana::utils::get_ata_balance;
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -13,9 +15,17 @@ use std::str::FromStr;
 pub async fn swap_ixs(
     keypair: &Keypair,
     base_mint: Pubkey,
-    amount: u64,
+    amount: Option<u64>,
     slippage_bps: Option<u64>,
-) -> Result<Vec<Instruction>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = RpcClient::new(RPC_URL); 
+    let final_amount = match amount {
+        Some(amount) => amount, 
+        None => {
+            let amount = get_ata_balance(&client, &keypair, &base_mint).await;
+            amount.unwrap()
+        }
+    }; 
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let slippage_bps = slippage_bps.unwrap_or(100);
     let only_direct_routes = true; //Might need to change this
@@ -23,7 +33,7 @@ pub async fn swap_ixs(
     let quotes = jup_ag::quote(
         base_mint,
         sol,
-        amount,
+        final_amount,
         QuoteConfig {
             only_direct_routes,
             slippage_bps: Some(slippage_bps),
@@ -75,7 +85,7 @@ pub async fn swap_ixs(
 pub async fn sol_for_tokens(
     base_mint: Pubkey,
     amount: u64,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let amount_decimals = amount * 1_000_000; // 6 decimals
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let only_direct_routes = true;

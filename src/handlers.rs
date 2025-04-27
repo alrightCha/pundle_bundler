@@ -8,6 +8,7 @@ use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::utils::get_splits;
 use crate::solana::bump::Bump;
 use crate::solana::recursive_pay::recursive_pay;
+use crate::SharedLut;
 use anchor_spl::associated_token::get_associated_token_address;
 use axum::Json;
 use pumpfun_cpi::instruction::Create;
@@ -21,15 +22,11 @@ use solana_sdk::transaction::Transaction;
 use solana_sdk::transaction::VersionedTransaction;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::spawn;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 //Params needed for the handlers
-use crate::params::{
-    BundleWallet, GetBundleWalletsRequest, GetBundleWalletsResponse, KeypairWithAmount,
-    PostBundleRequest, PostBundleResponse, Wallet,
-};
+use crate::params::{KeypairWithAmount, PostBundleRequest, PostBundleResponse, Wallet};
 
 //My crates
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, TOKEN_AMOUNT_MULTIPLIER};
@@ -37,8 +34,11 @@ use crate::jito::bundle::process_bundle;
 use crate::jito::jito::JitoBundle;
 use crate::solana::grind::grind;
 use crate::solana::helpers::{get_sol_amount, sell_all_txs};
-use crate::solana::utils::{create_keypair, get_keypairs_for_pubkey, load_keypair,get_admin_keypair};
+use crate::solana::utils::{
+    create_keypair, get_admin_keypair, get_keypairs_for_pubkey, load_keypair,
+};
 use std::collections::HashMap;
+use tokio::sync::RwLockWriteGuard;
 
 //TODO : Sell all , Sell unique, Sell bulk
 pub async fn health_check() -> &'static str {
@@ -61,7 +61,7 @@ pub async fn health_check() -> &'static str {
 // -> map requester to keypairs,
 // -> return array of public keys
 pub async fn handle_post_bundle(
-    pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
+    pubkey_to_lut: SharedLut,
     Json(payload): Json<PostBundleRequest>,
 ) -> Json<PostBundleResponse> {
     println!(
@@ -161,7 +161,8 @@ pub async fn handle_post_bundle(
             Ok(lut) => {
                 println!("Inserting LUT for mint: {:?}", mint_pubkey);
                 println!("LUT: {:?}", lut);
-                pubkey_to_lut.lock().await.insert(mint_pubkey, lut);
+                let mut map = pubkey_to_lut.write().await;
+                map.insert(mint_pubkey, lut);
             }
             Err(e) => {
                 eprintln!("Error processing bundle for mint {}: {}", mint_pubkey, e);
@@ -188,9 +189,7 @@ pub async fn get_pool_information(
     Json(pool_information)
 }
 
-pub async fn complete_bundle(
-    Json(payload): Json<CompleteRequest>,
-) -> Json<CompleteResponse> {
+pub async fn complete_bundle(Json(payload): Json<CompleteRequest>) -> Json<CompleteResponse> {
     let mint = Pubkey::from_str(&payload.mint).unwrap();
     let loaded_admin_kp = get_admin_keypair();
     let payer: Arc<Keypair> = Arc::new(loaded_admin_kp);
@@ -229,7 +228,7 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
 
         let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
             true => {
-                let swap_ixs = swap_ixs(&keypair, mint_pubkey, amount, None).await.unwrap();
+                let swap_ixs = swap_ixs(&keypair, mint_pubkey, Some(amount), None).await.unwrap();
                 swap_ixs
             }
             false => {
@@ -268,7 +267,7 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
 
 //This function sells all leftover tokens for a given mint and deployer
 pub async fn sell_all_leftover_tokens(
-    pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
+    pubkey_to_lut: SharedLut,
     Json(payload): Json<SellAllRequest>,
 ) -> Json<SellResponse> {
     let with_admin_transfer: bool = payload.admin;
@@ -276,11 +275,12 @@ pub async fn sell_all_leftover_tokens(
     let mint: String = payload.mint;
     let mint_pubkey: Pubkey = Pubkey::from_str(&mint).unwrap();
 
-    println!("Mint Pubkey: {:?}", mint_pubkey.to_string()); 
-    let unlocked_lut = pubkey_to_lut.lock().await;
-    let lut_account_pubkey = unlocked_lut.get(&mint);
+    println!("Mint Pubkey: {:?}", mint_pubkey.to_string());
 
-    
+    let lock = pubkey_to_lut.read().await;
+
+    let lut_account_pubkey = lock.get(&mint);
+
     //Initializing pumpfun client & rpc client
     let client = RpcClient::new(RPC_URL);
 
@@ -368,9 +368,7 @@ pub async fn sell_all_leftover_tokens(
     }
 }
 
-pub async fn withdraw_all_sol(
-    Json(payload): Json<WithdrawAllSolRequest>,
-) -> Json<SellResponse> {
+pub async fn withdraw_all_sol(Json(payload): Json<WithdrawAllSolRequest>) -> Json<SellResponse> {
     let requester: String = payload.pubkey;
     let mint: String = payload.mint;
     tokio::spawn(async move {
@@ -412,7 +410,7 @@ pub async fn get_price(Json(payload): Json<Price>) -> Json<PriceResponse> {
 }
 
 pub async fn setup_lut_record(
-    pubkey_to_lut: Arc<Mutex<HashMap<String, Pubkey>>>,
+    pubkey_to_lut: SharedLut,
     Json(payload): Json<LutInit>,
 ) -> Json<LutResponse> {
     println!("Received init lut");
@@ -420,19 +418,11 @@ pub async fn setup_lut_record(
     let luts: Vec<LutRecord> = payload.luts;
     let mut all_successful = true;
 
+    let mut lock = pubkey_to_lut.write().await;
     for lut_record in luts {
         match Pubkey::from_str(&lut_record.lut) {
             Ok(lut_pubkey) => {
-                if pubkey_to_lut
-                    .lock()
-                    .await
-                    .insert(lut_record.mint, lut_pubkey)
-                    .is_none()
-                {
-                    // Insert succeeded
-                } else {
-                    // Key already existed, still counts as successful
-                }
+                lock.insert(lut_record.mint, lut_pubkey);
             }
             Err(_) => {
                 all_successful = false;
