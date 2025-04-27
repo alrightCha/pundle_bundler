@@ -1,4 +1,5 @@
-use crate::config::RPC_URL;
+use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
+use crate::jito::jito::JitoBundle;
 use crate::solana::utils::{get_slot_and_blockhash, load_keypair}; // For parsing JSON files
 use dotenv::dotenv;
 use jito_sdk_rust::JitoJsonRpcSDK;
@@ -231,9 +232,13 @@ pub async fn recursive_pay(
 
     // Send bundle using Jito SDK
     println!("Sending bundle with 1 transaction...");
-    let res = jito_sdk.send_bundle(Some(bundle), uuid).await;
+    let result = jito_sdk.send_bundle(Some(bundle), uuid).await.unwrap();
+    
+    let jito_validate = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT); 
 
-    //TODO: IF FALSE, FIND A WAY TO MAKE IT TRUE
+    let res = jito_validate.validate_bundle(None, Pubkey::default(), result).await; 
+    
+        //TODO: IF FALSE, FIND A WAY TO MAKE IT TRUE
     match res {
         Ok(_) => true,
         Err(_) => false,

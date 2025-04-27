@@ -2,7 +2,7 @@ use crate::pumpfun::pump::PumpFun;
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use jito_sdk_rust::JitoJsonRpcSDK;
-use serde_json::json;
+use serde_json::{json, Value};
 use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
@@ -144,6 +144,10 @@ impl JitoBundle {
 
         let response = self.jito_sdk.send_bundle(Some(bundle), uuid).await?;
 
+        self.validate_bundle(pumpfun_client, mint, response).await
+    }
+
+    pub async fn validate_bundle(&self, pumpfun_client: Option<&PumpFun>, mint: Pubkey, response: Value) -> Result<()> {
         // Extract bundle UUID from response
         let bundle_uuid = response["result"]
             .as_str()

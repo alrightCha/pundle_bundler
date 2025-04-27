@@ -361,7 +361,7 @@ pub async fn sell_all_leftover_tokens(
     }
 
     if with_admin_transfer {
-        let res = recursive_pay(requester, mint, None, true).await;
+        let res = recursive_pay(requester, mint,  None, true).await;
         Json(SellResponse { success: res })
     } else {
         Json(SellResponse { success: true })
