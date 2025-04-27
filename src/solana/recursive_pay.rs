@@ -225,11 +225,9 @@ pub async fn recursive_pay(
         txs.push(serialized_tx);
     }
 
-    let json_txs = json!(txs); 
-
     // Prepare bundle for submission (array of transactions)
     let bundle = json!([
-        json_txs,
+        txs,
         {
             "encoding": "base64"
         }

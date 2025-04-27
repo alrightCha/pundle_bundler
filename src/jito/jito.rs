@@ -74,9 +74,8 @@ impl JitoBundle {
         // Send transaction using Jito SDK
         println!("Sending transaction...");
 
-        let txs = json!(serialized_tx); 
         let params = json!([
-            txs,
+            serialized_tx,
             {
                 "encoding": "base64"
             }
@@ -142,10 +141,8 @@ impl JitoBundle {
             .map(|tx| general_purpose::STANDARD.encode(bincode::serialize(&tx).unwrap()))
             .collect();
 
-        let txs = json!(serialized_txs); 
-
         let bundle = json!([
-            txs,
+            serialized_txs,
             {
                 "encoding": "base64"
             }
