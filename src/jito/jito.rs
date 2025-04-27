@@ -134,14 +134,13 @@ impl JitoBundle {
         pumpfun_client: Option<&PumpFun>,
     ) -> Result<()> {
         // Serialize each transaction and encode it using bs58
-
         //TODO: Check if this step is necessary
         let serialized_txs: Vec<String> = transactions
             .into_iter()
             .map(|tx| general_purpose::STANDARD.encode(bincode::serialize(&tx).unwrap()))
             .collect();
 
-        let bundle = json!([
+        let params = json!([
             serialized_txs,
             {
                 "encoding": "base64"
@@ -151,7 +150,7 @@ impl JitoBundle {
         // UUID for the bundle
         let uuid = None;
 
-        let response = self.jito_sdk.send_bundle(Some(bundle), uuid).await?;
+        let response = self.jito_sdk.send_bundle(Some(params), uuid).await?;
 
         self.validate_bundle(pumpfun_client, mint, response).await
     }
