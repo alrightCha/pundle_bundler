@@ -2,7 +2,6 @@ use crate::config::{ADMIN_PUBKEY, RPC_URL};
 use jup_ag::{QuoteConfig, SwapRequest};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::instruction::Instruction;
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use crate::solana::utils::get_ata_balance;
 use solana_sdk::{
     pubkey::Pubkey,

@@ -7,6 +7,7 @@ mod pumpfun;
 mod solana;
 
 use std::sync::Arc;
+use solana::refund::refund_keypairs;
 use tokio::sync::RwLock;
 use axum::routing::{get, post};
 use axum::Router;
@@ -43,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //Storing LUT to access it across handlers
     let pubkey_to_lut: SharedLut = Arc::new(RwLock::new(HashMap::new()));
     
+    refund_keypairs("FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH".to_string(), "FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH".to_string(), "aaTGhHYGru6CGpnJtu2CokCgEjj7p4yTA313QYcrgmp".to_string()).await; 
     //setup app
     let app = Router::new()
         .route("/", get(health_check))
