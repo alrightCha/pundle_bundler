@@ -20,7 +20,6 @@ use solana_sdk::{
 use std::result::Result::Ok;
 use std::thread::sleep;
 use std::{thread, time::Duration};
-use tokio::time;
 
 fn send_transaction(
     client: &RpcClient,

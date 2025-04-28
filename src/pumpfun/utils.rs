@@ -6,11 +6,11 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     let mut bonding_curve = BondingCurveAccount::default();
     
     // Get tokens received for dev buy
-    let _ = bonding_curve.get_buy_price(dev_buy).unwrap();
+    let dev = bonding_curve.get_buy_price(dev_buy).unwrap();
     
     // Get tokens that would be received for the amount
     let tokens_for_amount = bonding_curve.get_buy_price(amount).unwrap();
-    println!("Tokens to receive: {:?}", tokens_for_amount);
+    println!("Tokens to receive: {:?}", tokens_for_amount + dev);
 
     const TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000;
     let max_tokens_per_wallet: u64 = (TOTAL_SUPPLY as f64 * percent) as u64;
@@ -80,9 +80,9 @@ mod tests {
 
     #[test]
     fn test_large_amount_multiple_splits() {
-        let dev_buy = 500_000_000;
-        let amount = 14_000_000_000; // Large amount that should result in multiple wallets
-        let splits = get_splits(dev_buy, amount, 0.02);
+        let dev_buy = 1_000_000_000;
+        let amount = 9_500_000_000; // Large amount that should result in multiple wallets
+        let splits = get_splits(dev_buy, amount, 0.030);
         
         let total = splits.iter().sum::<u64>();
         println!("Splits: {:?}", splits);
