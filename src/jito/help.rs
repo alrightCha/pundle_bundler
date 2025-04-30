@@ -255,7 +255,7 @@ impl BundleTransactions {
         {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount, None, false)
+                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount - BUFFER_AMOUNT, None, false)
                 .await
                 .unwrap();
 
