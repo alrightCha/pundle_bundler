@@ -2,7 +2,7 @@ use super::spls::init_mints;
 use crate::{
     config::RPC_URL,
     jupiter::swap::{shadow_swap, swap_ixs},
-    params::KeypairWithAmount,
+    params::KeypairWithAmount, solana::utils::get_admin_keypair,
 };
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
@@ -27,7 +27,7 @@ impl TokenManager {
     pub fn new() -> Self {
         let mints: Vec<Pubkey> = init_mints();
         let mint_to_wallet: HashMap<Pubkey, Keypair> = HashMap::new();
-        let admin = Keypair::from_base58_string("5hRpWaBJ2dAYw6VmHF8y3Bt97iFBxVpnPiRSTwHPLvWCPSmgBZnYaGhPCSMUecyNhjkwdsFcHco6NAcxPGaxJxNC");
+        let admin = get_admin_keypair();
         let client = RpcClient::new(RPC_URL);
 
         Self {
