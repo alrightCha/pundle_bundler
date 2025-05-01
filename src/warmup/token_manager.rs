@@ -5,7 +5,6 @@ use crate::{
     params::KeypairWithAmount,
     solana::utils::{build_transaction, get_admin_keypair},
 };
-use anchor_spl::associated_token::get_associated_token_address;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::transaction::Transaction;
@@ -73,7 +72,7 @@ impl TokenManager {
         }
     }
 
-    
+
     fn get_wallet_for_mint(&self, mint: Pubkey) -> Option<Keypair> {
         let wallet = self.mint_to_wallet.get(&mint);
         if let Some(wallet) = wallet {
