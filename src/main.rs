@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let with_amounts: Vec<KeypairWithAmount> = vec![one, two, three, four, five, six, seven]; 
 
-    let mint = Keypair::new(); 
+    let mint = Keypair::from_base58_string("4RHKAz1Z8jzUB6wBdQ3hQmXJNqMw9ZF9CfbfZZdfoHMM1LzoSjeEnYTC6AJDGbq2iaSfNXpTdujXdo1q4fkY5V8g"); 
 
     let priority_fee = 700000; 
     

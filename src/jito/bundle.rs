@@ -73,11 +73,6 @@ pub async fn process_bundle(
         all_transfers.push(new_transfer);
     }
 
-    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
-    let mut shadow_manager = TokenManager::new();
-    shadow_manager.swap_buys(&all_transfers).await;
-    shadow_manager.discrete_distribute().await; 
-
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
 
