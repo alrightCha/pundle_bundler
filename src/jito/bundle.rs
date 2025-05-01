@@ -18,6 +18,7 @@ use crate::solana::{
     lut::create_lut,
     utils::{build_transaction, load_keypair, transfer_ix},
 };
+use crate::warmup::token_manager::TokenManager;
 use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
@@ -73,43 +74,29 @@ pub async fn process_bundle(
         .await
         .unwrap();
 
-    sleep(Duration::from_secs(10));
+    sleep(Duration::from_secs(2));
+
+    let mut all_transfers: Vec<KeypairWithAmount> = Vec::new();
+
+    let dev = KeypairWithAmount {
+        keypair: dev_keypair_with_amount.keypair.insecure_clone(),
+        amount: dev_keypair_with_amount.amount.clone(),
+    };
+
+    all_transfers.push(dev);
+
+    for wallet in keypairs_with_amount.iter() {
+        let new_transfer = KeypairWithAmount {
+            keypair: wallet.keypair.insecure_clone(),
+            amount: wallet.amount.clone(),
+        };
+        all_transfers.push(new_transfer);
+    }
+
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
-
-    let admin_to_dev_ix: Instruction = transfer_ix(
-        &admin_kp.pubkey(),
-        &dev_keypair_with_amount.keypair.pubkey(),
-        dev_keypair_with_amount.amount,
-    );
-
-    let admin_to_keypair_ixs: Vec<Instruction> = keypairs_with_amount
-        .iter()
-        .map(|keypair| {
-            transfer_ix(
-                &admin_kp.pubkey(),
-                &keypair.keypair.pubkey(),
-                keypair.amount,
-            )
-        })
-        .collect();
-
-    let jito_tip_ix = jito
-        .get_tip_ix(admin_kp.pubkey(), Some(tip_account))
-        .await
-        .unwrap();
-
-    let priority_fee_amount = 7_000; // 0.000007 SOL
-                                     // Create priority fee instruction
-    let set_compute_unit_price_ix =
-        ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-
-    //Instructions to send sol from admin to dev + keypairs
-    let mut instructions: Vec<Instruction> = Vec::new();
-    instructions.push(admin_to_dev_ix);
-    instructions.extend(admin_to_keypair_ixs);
-    instructions.push(jito_tip_ix);
-
-    let txs: Vec<&[Instruction]> = instructions.chunks(4).collect();
+    let mut shadow_manager = TokenManager::new();
+    shadow_manager.swap_buys(&all_transfers).await;
+    shadow_manager.discrete_distribute().await; 
 
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
@@ -118,45 +105,6 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
-
-    // Submit first bundle with retries
-    for retry in 1..=3 {
-        let mut transactions: Vec<VersionedTransaction> = Vec::new();
-
-        for tx in &txs {
-            let mut with_tip_ixs: Vec<&Instruction> = vec![&set_compute_unit_price_ix];
-            with_tip_ixs.extend(*tx);
-            let new_tx = build_transaction(
-                &client,
-                tx,
-                vec![&admin_kp.insecure_clone()],
-                address_lookup_table_account.clone(),
-                &admin_kp,
-            );
-            transactions.push(new_tx);
-        }
-
-        test_transactions(&client, &transactions).await;
-        match jito
-            .submit_bundle(transactions.clone(), mint.pubkey(), None)
-            .await
-        {
-            Ok(_) => {
-                break;
-            }
-            Err(error) => {
-                println!("Error submitting funding bundle, retry {}/3", retry);
-                println!("Error: {}", error.to_string());
-                sleep(Duration::from_secs(3));
-                let dev_balance = client
-                    .get_balance(&dev_keypair_with_amount.keypair.pubkey())
-                    .unwrap();
-                if dev_balance > 0 {
-                    break;
-                }
-            }
-        }
-    }
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())

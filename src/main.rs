@@ -5,6 +5,7 @@ mod jupiter;
 mod params;
 mod pumpfun;
 mod solana;
+mod warmup;
 
 use std::sync::Arc;
 use solana::refund::refund_keypairs;

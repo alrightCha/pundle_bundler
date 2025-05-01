@@ -85,7 +85,7 @@ pub async fn sell_all_txs(
 
         let new_ixs: Option<Vec<Instruction>> = match token_bonded {
             true => {
-                let swap_ixs = swap_ixs(&keypair, *mint_pubkey, None, None)
+                let swap_ixs = swap_ixs(&keypair, *mint_pubkey, None, None, true)
                     .await
                     .unwrap();
                 Some(swap_ixs)
