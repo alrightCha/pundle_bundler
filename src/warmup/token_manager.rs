@@ -56,7 +56,7 @@ impl TokenManager {
                 self.send_tx(ixs, Some(wallet)).await;
             }
         }
-        self.cleanup();
+        self.cleanup().await;
     }
 
     //sets each wallet to the designated mint & returns the buying instructions for each token
@@ -144,7 +144,10 @@ impl TokenManager {
             );
 
             match self.client.send_and_confirm_transaction(&transaction) {
-                Ok(sig) => println!("Sent distirbute tx with sig {:?}", sig.to_string()),
+                Ok(sig) => {
+                    println!("Sent distirbute tx with sig {:?}", sig.to_string()); 
+                    break; 
+                }
                 Err(e) => {
                     retry_count += 1;
                     if retry_count >= max_retries {
