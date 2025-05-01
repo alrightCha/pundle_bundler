@@ -3,7 +3,7 @@ use crate::{
     config::RPC_URL,
     jupiter::swap::{shadow_swap, swap_ixs},
     params::KeypairWithAmount,
-    solana::utils::{build_transaction, get_admin_keypair},
+    solana::utils::get_admin_keypair,
 };
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -11,7 +11,7 @@ use solana_sdk::transaction::Transaction;
 use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
-    signature::{Keypair, Signature},
+    signature::Keypair,
     signer::Signer,
 };
 use std::collections::HashMap;
