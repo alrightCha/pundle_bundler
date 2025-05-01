@@ -23,6 +23,7 @@ use crate::{jito::jito::JitoBundle, solana::utils::test_transactions};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::address_lookup_table::state::AddressLookupTable;
+use std::str::FromStr;
 use std::{env, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
@@ -47,32 +48,11 @@ pub async fn process_bundle(
 
     let pumpfun_client = PumpFun::new(payer);
 
-    let mut pubkeys_for_lut: Vec<Pubkey> = Vec::new();
 
     let tip_account: Pubkey = jito.get_tip_account().await;
 
-    pubkeys_for_lut.push(admin_kp.pubkey());
 
-    //Adding other addresses to lut
-    let extra_addresses: Vec<Pubkey> = pumpfun_client.get_addresse_for_lut(&mint.pubkey()).await;
-    pubkeys_for_lut.extend(extra_addresses);
-    pubkeys_for_lut.push(mint.pubkey());
-    pubkeys_for_lut.push(dev_keypair_with_amount.keypair.pubkey());
-
-    for keypair in keypairs_with_amount.iter() {
-        pubkeys_for_lut.push(keypair.keypair.pubkey());
-        let ata_pubkey = pumpfun_client.get_ata(&keypair.keypair.pubkey(), &mint.pubkey());
-        println!("ATA pubkey: {:?}", ata_pubkey);
-        pubkeys_for_lut.push(ata_pubkey);
-    }
-
-    let dev_ata_pubkey =
-        pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
-    pubkeys_for_lut.push(dev_ata_pubkey);
-
-    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
-        .await
-        .unwrap();
+    let lut_pubkey: Pubkey = Pubkey::from_str("4bFS1Rd9FDVxjXU1tXCBeeXc2VD9wUciPqADWsWdcycZ").unwrap(); 
 
     sleep(Duration::from_secs(2));
 
