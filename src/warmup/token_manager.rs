@@ -2,19 +2,19 @@ use super::spls::init_mints;
 use crate::{
     config::RPC_URL,
     jupiter::swap::{shadow_swap, swap_ixs},
-    params::KeypairWithAmount, solana::utils::get_admin_keypair,
+    params::KeypairWithAmount,
+    solana::utils::get_admin_keypair,
 };
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::transaction::Transaction;
 use solana_sdk::{
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
 };
-use solana_sdk::transaction::Transaction;
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::collections::HashMap;
-
 
 pub struct TokenManager {
     mints: Vec<Pubkey>,
@@ -52,8 +52,7 @@ impl TokenManager {
                 let ixs = shadow_swap(&self.client, &self.admin, *mint, wallet.pubkey(), Some(500))
                     .await
                     .unwrap();
-                let sig = self.send_tx(ixs, Some(wallet)).await;
-                println!("Sent distirbute tx with sig {:?}", sig)
+                self.send_tx(ixs, Some(wallet)).await;
             }
         }
         self.reset_map();
@@ -90,34 +89,51 @@ impl TokenManager {
         self.mint_to_wallet = HashMap::new();
     }
 
-    async fn send_tx(&self, ixs: Vec<Instruction>, signer: Option<Keypair>) -> Signature {
-        let priority_fee_amount = 500_000; // 0.0005 SOL
-        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount); 
-        let mut instructions: Vec<Instruction> = vec![fee_ix]; 
-        instructions.extend(ixs); 
-        
-        let blockhash = self.client.get_latest_blockhash().unwrap();
+    async fn send_tx(&self, ixs: Vec<Instruction>, signer: Option<Keypair>) {
+        let max_retries = 3;
+        let mut retry_count = 0;
 
-        let mut signers: Vec<Keypair> = vec![self.admin.insecure_clone()];
+        loop {
+            let priority_fee_amount = 500_000; // 0.0005 SOL
+            let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+            let mut instructions: Vec<Instruction> = vec![fee_ix];
+            instructions.extend(ixs.clone());
 
-        if let Some(signer) = signer {
-            signers.push(signer);
+            let blockhash = self.client.get_latest_blockhash().unwrap();
+
+            let mut signers: Vec<Keypair> = vec![self.admin.insecure_clone()];
+
+            if let Some(ref signer) = signer {
+                signers.push(signer.insecure_clone());
+            }
+
+            let tx_signers: Vec<&Keypair> = signers.iter().collect();
+
+            let transaction = Transaction::new_signed_with_payer(
+                &instructions,
+                Some(&self.admin.pubkey()),
+                &tx_signers,
+                blockhash,
+            );
+
+            match self.client.send_and_confirm_transaction(&transaction) {
+                Ok(sig) => println!("Sent distirbute tx with sig {:?}", sig.to_string()),
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= max_retries {
+                        println!(
+                            "Failed to send transaction after {} retries: {}",
+                            max_retries, e
+                        );
+                    }
+                    println!(
+                        "Transaction failed, retrying ({}/{}): {}",
+                        retry_count, max_retries, e
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    continue;
+                }
+            };
         }
-
-        let tx_signers: Vec<&Keypair> = signers.iter().collect();
-
-        let transaction = Transaction::new_signed_with_payer(
-            &instructions,
-            Some(&self.admin.pubkey()),
-            &tx_signers,
-            blockhash,
-        );
-
-        let sig = self
-            .client
-            .send_and_confirm_transaction(&transaction)
-            .unwrap();
-
-        sig
     }
 }
