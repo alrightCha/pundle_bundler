@@ -49,7 +49,7 @@ impl TokenManager {
                     mint.to_string(),
                     wallet.pubkey().to_string()
                 );
-                let ixs = shadow_swap(&self.client, &self.admin, *mint, wallet.pubkey(), Some(200))
+                let ixs = shadow_swap(&self.client, &self.admin, *mint, wallet.pubkey(), Some(500))
                     .await
                     .unwrap();
                 let sig = self.send_tx(ixs, Some(wallet)).await;
@@ -64,7 +64,7 @@ impl TokenManager {
         for (index, wallet) in wallets.iter().enumerate() {
             let mint = self.mints[index];
             self.set_mint_for_wallet(wallet.keypair.insecure_clone(), mint.clone());
-            let swap_ixs = swap_ixs(&self.admin, mint, Some(wallet.amount), Some(200), false)
+            let swap_ixs = swap_ixs(&self.admin, mint, Some(wallet.amount), Some(500), false)
                 .await
                 .unwrap();
 
@@ -91,7 +91,7 @@ impl TokenManager {
     }
 
     async fn send_tx(&self, ixs: Vec<Instruction>, signer: Option<Keypair>) -> Signature {
-        let priority_fee_amount = 7_000; // 0.000007 SOL
+        let priority_fee_amount = 500_000; // 0.0005 SOL
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount); 
         let mut instructions: Vec<Instruction> = vec![fee_ix]; 
         instructions.extend(ixs); 
