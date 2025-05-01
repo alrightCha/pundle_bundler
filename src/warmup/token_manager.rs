@@ -3,8 +3,9 @@ use crate::{
     config::RPC_URL,
     jupiter::swap::{shadow_swap, swap_ixs},
     params::KeypairWithAmount,
-    solana::utils::get_admin_keypair,
+    solana::utils::{build_transaction, get_admin_keypair},
 };
+use anchor_spl::associated_token::get_associated_token_address;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::transaction::Transaction;
@@ -55,7 +56,7 @@ impl TokenManager {
                 self.send_tx(ixs, Some(wallet)).await;
             }
         }
-        self.reset_map();
+        self.cleanup();
     }
 
     //sets each wallet to the designated mint & returns the buying instructions for each token
@@ -87,6 +88,32 @@ impl TokenManager {
 
     fn reset_map(&mut self) {
         self.mint_to_wallet = HashMap::new();
+    }
+
+    async fn cleanup(&mut self) {
+        let mut all_instructions = Vec::new();
+        let mut current_bundle = Vec::new();
+
+        for (index, mint) in self.mints.iter().enumerate() {
+            let ata = get_associated_token_address(&self.admin.pubkey(), mint);
+            if !self.client.get_account(&ata).is_err() {
+                let ixs = swap_ixs(&self.admin, *mint, None, Some(200), true).await.unwrap();
+                current_bundle.extend(ixs);
+                
+                // When we have 2 mints worth of instructions or this is the last mint
+                if current_bundle.len() >= 2 || index == self.mints.len() - 1 {
+                    all_instructions.push(current_bundle.clone());
+                    current_bundle.clear();
+                }
+            }
+        }
+
+        // Send each bundle of instructions
+        for bundle in all_instructions {
+            self.send_tx(bundle, None).await;
+        }
+
+        self.reset_map();
     }
 
     async fn send_tx(&self, ixs: Vec<Instruction>, signer: Option<Keypair>) {
