@@ -13,9 +13,9 @@ use anchor_spl::{
 };
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use solana_sdk::transaction::VersionedTransaction;
 use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
@@ -151,26 +151,27 @@ impl TokenManager {
         let mut tx_ixs: Vec<Instruction> = Vec::new();
 
         tx_ixs.push(fee_ix.clone());
-
+        let mut pushed = false; 
         for ix in self.shadow_ixs.iter() {
-            let mut maybe_ixs: Vec<Instruction> = Vec::new();
-            for ix in tx_ixs.iter() {
-                maybe_ixs.push(ix.clone());
-            }
+            let mut maybe_ixs: Vec<Instruction> = tx_ixs.clone();
             maybe_ixs.push(ix.clone());
             println!("#1");
             self.print_signers(&maybe_ixs);
             let maybe_tx =
                 build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
             let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
-            if size > 1232 {
+            println!("Maybe size is: {:?}", size); 
+            if size >= 1232 {
                 println!("#2");
                 self.print_signers(&tx_ixs);
                 let tx = build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
                 bundle_txs.push(tx);
                 tx_ixs = vec![fee_ix.clone(), ix.clone()];
-                if bundle_txs.len() % 5 == 4 {
+                if bundle_txs.len() % 5 == 4 && !pushed {
                     tx_ixs.push(tip_ix.clone());
+                    pushed = true; 
+                }else{
+                    pushed = false; 
                 }
             } else {
                 tx_ixs.push(ix.clone());
