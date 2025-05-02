@@ -1,143 +1,251 @@
-use super::spls::init_mints;
+use super::spls::{get_aggregators, JUP};
 use crate::{
-    config::RPC_URL,
-    jupiter::swap::{shadow_swap, swap_ixs},
+    config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
+    jito::jito::JitoBundle,
+    jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
-    solana::utils::get_admin_keypair,
+    solana::utils::{build_transaction, get_admin_keypair, store_secret},
 };
+
+use anchor_spl::associated_token::get_associated_token_address;
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
-use solana_sdk::transaction::Transaction;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::Keypair,
-    signer::Signer,
+use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
+use solana_sdk::{compute_budget::ComputeBudgetInstruction, system_instruction};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
+use solana_sdk::{sysvar::rent::Rent, transaction::VersionedTransaction};
+use std::{
+    collections::HashMap,
+    str::FromStr,
 };
-use std::collections::HashMap;
+
+/**
+ * generate new hop keypair for each buying keypair
+ * collect total usdc buying amount and map individual usdc to each hop keypair
+ * execute swaps for given usdc amount and set hop keypair as recipient
+ * transfer total sol balance from hop keypair to buying keypair
+ */
+
+/**
+ * STEP 1: GET SWAP IX FROM ADMIN WALLET TO JUP ATA
+ * STEP 2: GET LUT PUBKEYS TO EXTEND TO LUT
+ * STEP 3: EXTEND LUT WITH PUBKEYS
+ * STEP 4: COLLECT SIGNING KEYPAIRS
+ * STEP 5: COLLECT REST IXS TO COMPLETE SHADOW SWAP
+ * STEP 6: BUILD JITO BUNDLES WITH IXS & SIGNERES
+ * STEP 7: COMPLETE SWAPS IN BUNDLES
+ * STEP 8: TRANSFER IXS THROUGH CUSTOM PROGRAM
+ * STEP 9: (OPTIONAL): WARMUP BUYING WALLETS
+ */
 
 pub struct TokenManager {
-    mints: Vec<Pubkey>,
-    mint_to_wallet: HashMap<Pubkey, Keypair>,
+    jup: Pubkey,
+    wallet_to_amount: HashMap<Pubkey, u64>,
+    pubkey_to_keypair: HashMap<Pubkey, Keypair>,
+    hop_to_pubkey: HashMap<Pubkey, Pubkey>,
     admin: Keypair,
     client: RpcClient,
+    shadow_ixs: Vec<Instruction>,
+    last_funding: Pubkey,
 }
 
 impl TokenManager {
     pub fn new() -> Self {
-        let mints: Vec<Pubkey> = init_mints();
-        let mint_to_wallet: HashMap<Pubkey, Keypair> = HashMap::new();
+        let jup: Pubkey = Pubkey::from_str(JUP).unwrap();
+        let pubkey_to_keypair: HashMap<Pubkey, Keypair> = HashMap::new();
+        let wallet_to_amount: HashMap<Pubkey, u64> = HashMap::new();
+        let hop_to_pubkey: HashMap<Pubkey, Pubkey> = HashMap::new();
         let admin = get_admin_keypair();
         let client = RpcClient::new(RPC_URL);
 
+        let shadow_ixs: Vec<Instruction> = Vec::new();
+        let last_funding = Pubkey::default();
+
         Self {
-            mints,
-            mint_to_wallet,
+            jup,
+            pubkey_to_keypair,
+            wallet_to_amount,
+            hop_to_pubkey,
             admin,
             client,
+            shadow_ixs,
+            last_funding,
         }
     }
 
+    //1ST CALL
+    //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
+    pub async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) {
+        let mut total: u64 = 0;
+        for wallet in wallets.iter() {
+            if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
+                total += amount;
+
+                let new_kp = Keypair::new();
+                store_secret("hops.txt", &new_kp);
+                self.hop_to_pubkey
+                    .insert(new_kp.pubkey(), wallet.keypair.pubkey());
+
+                self.handle_wallet(amount, new_kp);
+            }
+        }
+
+        let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
+            .await
+            .unwrap();
+        //Reset our shadow vector and extend it
+        self.shadow_ixs = Vec::new();
+        self.shadow_ixs.extend(swap_ixs);
+        self.hop_alloc_ixs().await;
+    }
+
+    //2ND CALL
+    //Return :
+    //Admin jup token account pubkey
+    //Jup address
+    //hop pubkeys
+    //Jup aggregators
+    pub fn get_pubkeys_for_lut(&self) -> Vec<Pubkey> {
+        let mut pubkeys: Vec<Pubkey> = Vec::new();
+        pubkeys.push(self.jup.clone());
+        let admin_jup_ata = get_associated_token_address(&self.admin.pubkey(), &self.jup);
+        pubkeys.push(admin_jup_ata);
+        for (pubkey, _) in self.pubkey_to_keypair.iter() {
+            pubkeys.push(pubkey.clone());
+        }
+        let aggregators = get_aggregators();
+        pubkeys.extend(aggregators);
+        pubkeys
+    }
+
+    //3RD CALL -> GET IXS
     //Distributes tokens to respective token accounts, then cleans up token accounts and unwraps wsol to sol with jup cleanup and gasless txs
-    pub async fn discrete_distribute(&mut self) {
-        for (_, mint) in self.mints.iter().enumerate() {
-            let wallet = self.get_wallet_for_mint(mint.clone());
-            if let Some(wallet) = wallet {
-                //Get instructions for swap, then cleanup with gas less tx from jito
+    async fn hop_alloc_ixs(&mut self) {
+        let mut discrete_swaps_ixs: Vec<Instruction> = Vec::new();
+        for (pubkey, amount) in self.wallet_to_amount.iter() {
+            let swap_ixs = shadow_swap(
+                &self.client,
+                &self.admin,
+                self.jup,
+                *pubkey,
+                Some(500),
+                *amount,
+            )
+            .await
+            .unwrap();
+            discrete_swaps_ixs.extend(swap_ixs);
+            self.last_funding = pubkey.clone();
+        }
+        self.shadow_ixs.extend(discrete_swaps_ixs);
+    }
+
+    pub async fn shadow_bundle(&self, lut: &AddressLookupTableAccount) -> bool {
+        let priority_fee_amount = 500_000; // 0.0005 SOL
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
+
+        let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+
+        let mut bundle_txs: Vec<VersionedTransaction> = Vec::new();
+        let mut tx_ixs: Vec<Instruction> = Vec::new();
+
+        tx_ixs.push(fee_ix.clone());
+
+        for ix in self.shadow_ixs.iter() {
+            let mut maybe_ixs: Vec<Instruction> = Vec::new();
+            for ix in tx_ixs.iter() {
+                maybe_ixs.push(ix.clone());
+            }
+            maybe_ixs.push(ix.clone());
+
+            let maybe_tx =
+                build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
+            let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+            if size > 1232 {
+                let tx = build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
+                bundle_txs.push(tx);
+                tx_ixs = vec![fee_ix.clone(), ix.clone()];
+                if bundle_txs.len() % 5 == 4 {
+                    tx_ixs.push(tip_ix.clone());
+                }
+            } else {
+                tx_ixs.push(ix.clone());
+            }
+        }
+
+        if tx_ixs.len() > 1 {
+            tx_ixs.push(tip_ix);
+            let last_tx =
+                build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
+            bundle_txs.push(last_tx);
+        }
+
+        let chunks: Vec<_> = bundle_txs.chunks(5).collect();
+
+        for chunk in chunks {
+            let chunk_vec = chunk.to_vec();
+            let _ = jito
+                .process_bundle(chunk_vec, Pubkey::default(), None)
+                .await;
+        }
+
+        //If final funding balance is higher than 0, we have successfully funded all hop keypairs 
+        let final_balance = self.client.get_balance(&self.last_funding).unwrap();
+        final_balance > 0
+    }
+
+    //4TH CALL: DISTIRBUTE SOL FROM HOP WALLETS TO BUYING WALLETS
+    pub async fn final_distribute(&mut self) {
+        for (pubkey, keypair) in self.pubkey_to_keypair.iter() {
+            let buying_pubkey = self.hop_to_pubkey.get(&*pubkey);
+            if let Some(buying_pubkey) = buying_pubkey {
+                self.send_tx(keypair, buying_pubkey).await;
+            }
+        }
+        self.reset_maps();
+    }
+
+    fn handle_wallet(&mut self, amount: u64, wallet: Keypair) {
+        // Need to use wallet.pubkey() as the key since Keypair doesn't implement Hash/Eq
+        self.wallet_to_amount.insert(wallet.pubkey(), amount);
+        self.pubkey_to_keypair.insert(wallet.pubkey(), wallet);
+    }
+
+    fn reset_maps(&mut self) {
+        self.wallet_to_amount = HashMap::new();
+        self.pubkey_to_keypair = HashMap::new();
+        self.hop_to_pubkey = HashMap::new();
+    }
+
+    async fn send_tx(&self, signer: &Keypair, to: &Pubkey) {
+        let priority_fee_amount = 500_000; // 0.0005 SOL
+        let rent = Rent::default();
+        let rent_exempt_min = rent.minimum_balance(0);
+
+        let amount = self.client.get_balance(&signer.pubkey()).unwrap() - rent_exempt_min - 500_000;
+
+        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+        let transfer_ix = system_instruction::transfer(&signer.pubkey(), to, amount);
+
+        let instructions: Vec<Instruction> = vec![fee_ix, transfer_ix];
+        let blockhash = self.client.get_latest_blockhash().unwrap();
+
+        let transaction = Transaction::new_signed_with_payer(
+            &instructions,
+            Some(&signer.pubkey()),
+            &[&signer],
+            blockhash,
+        );
+
+        match self.client.send_and_confirm_transaction(&transaction) {
+            Ok(sig) => {
+                println!("Sent distirbute tx with sig {:?}", sig.to_string());
+            }
+            Err(e) => {
                 println!(
-                    "Attempting to shadow swap {:?} to wallet {:?}",
-                    mint.to_string(),
-                    wallet.pubkey().to_string()
+                    "Failed to send transaction to buying wallet for hop wallet: {:?}",
+                    signer.pubkey().to_string()
                 );
-                let ixs = shadow_swap(&self.client, &self.admin, *mint, wallet.pubkey(), Some(500))
-                    .await
-                    .unwrap();
-                self.send_tx(ixs, Some(wallet)).await;
             }
-        }
-        self.reset_map();
-    }
-
-    //sets each wallet to the designated mint & returns the buying instructions for each token
-    pub async fn swap_buys(&mut self, wallets: &Vec<KeypairWithAmount>) {
-        for (index, wallet) in wallets.iter().enumerate() {
-            let mint = self.mints[index];
-            self.set_mint_for_wallet(wallet.keypair.insecure_clone(), mint.clone());
-            let swap_ixs = swap_ixs(&self.admin, mint, Some(wallet.amount), Some(500), false)
-                .await
-                .unwrap();
-
-            let sig = self.send_tx(swap_ixs, None).await;
-            println!("Swapped {:?} with confirmation. Sig: {:?}", mint, sig);
-        }
-    }
-
-
-    fn get_wallet_for_mint(&self, mint: Pubkey) -> Option<Keypair> {
-        let wallet = self.mint_to_wallet.get(&mint);
-        if let Some(wallet) = wallet {
-            Some(wallet.insecure_clone())
-        } else {
-            None
-        }
-    }
-
-    fn set_mint_for_wallet(&mut self, wallet: Keypair, mint: Pubkey) {
-        self.mint_to_wallet.insert(mint, wallet);
-    }
-
-    fn reset_map(&mut self) {
-        self.mint_to_wallet = HashMap::new();
-    }
-
-    async fn send_tx(&self, ixs: Vec<Instruction>, signer: Option<Keypair>) {
-        let max_retries = 3;
-        let mut retry_count = 0;
-
-        loop {
-            let priority_fee_amount = 500_000; // 0.0005 SOL
-            let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-            let mut instructions: Vec<Instruction> = vec![fee_ix];
-            instructions.extend(ixs.clone());
-
-            let blockhash = self.client.get_latest_blockhash().unwrap();
-
-            let mut signers: Vec<Keypair> = vec![self.admin.insecure_clone()];
-
-            if let Some(ref signer) = signer {
-                signers.push(signer.insecure_clone());
-            }
-
-            let tx_signers: Vec<&Keypair> = signers.iter().collect();
-
-            let transaction = Transaction::new_signed_with_payer(
-                &instructions,
-                Some(&self.admin.pubkey()),
-                &tx_signers,
-                blockhash,
-            );
-
-            match self.client.send_and_confirm_transaction(&transaction) {
-                Ok(sig) => {
-                    println!("Sent distirbute tx with sig {:?}", sig.to_string()); 
-                    break; 
-                }
-                Err(e) => {
-                    retry_count += 1;
-                    if retry_count >= max_retries {
-                        println!(
-                            "Failed to send transaction after {} retries: {}",
-                            max_retries, e
-                        );
-                    }
-                    println!(
-                        "Transaction failed, retrying ({}/{}): {}",
-                        retry_count, max_retries, e
-                    );
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                    continue;
-                }
-            };
-        }
+        };
     }
 }

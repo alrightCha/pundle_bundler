@@ -3,6 +3,7 @@ use reqwest::Client as HttpClient;
 
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
+    instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::VersionedTransaction,
@@ -10,15 +11,12 @@ use solana_sdk::{
 
 use super::help::BundleTransactions;
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
+use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::validate_delayed_txs;
-use crate::solana::{
-    lut::create_lut,
-    utils::load_keypair,
-};
+use crate::solana::{lut::create_lut, utils::load_keypair};
 use crate::warmup::token_manager::TokenManager;
-use crate::jito::jito::JitoBundle;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::address_lookup_table::state::AddressLookupTable;
@@ -69,12 +67,6 @@ pub async fn process_bundle(
         pumpfun_client.get_ata(&dev_keypair_with_amount.keypair.pubkey(), &mint.pubkey());
     pubkeys_for_lut.push(dev_ata_pubkey);
 
-    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
-        .await
-        .unwrap();
-
-    sleep(Duration::from_secs(2));
-
     let mut all_transfers: Vec<KeypairWithAmount> = Vec::new();
 
     let dev = KeypairWithAmount {
@@ -94,8 +86,21 @@ pub async fn process_bundle(
 
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
     let mut shadow_manager = TokenManager::new();
-    shadow_manager.swap_buys(&all_transfers).await;
-    shadow_manager.discrete_distribute().await; 
+
+    // > Instructions to execute swap to USDC with funding admin wallet
+    // > fill up lUTS with new hop keypairs
+    //> Instructions to swap USDC to ATA of hop accounts
+    shadow_manager.init_alloc_ixs(&all_transfers).await;
+
+    //ADDING EXTRA PUBKEYS FOR HOPS
+    let extra_pubkeys = shadow_manager.get_pubkeys_for_lut();
+    pubkeys_for_lut.extend(extra_pubkeys);
+
+    let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
+        .await
+        .unwrap();
+
+    sleep(Duration::from_secs(2));
 
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
@@ -104,6 +109,12 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
+
+    shadow_manager
+        .shadow_bundle(&address_lookup_table_account)
+        .await;
+    //> Transfer sols from hop keypairs to buying keypairs
+    shadow_manager.final_distribute().await;
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())

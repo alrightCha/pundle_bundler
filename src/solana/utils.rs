@@ -17,12 +17,12 @@ use anyhow::Result;
 use bs58;
 use serde_json;
 use solana_client::rpc_client::RpcClient;
+use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::result::Result::Ok;
-use std::env;
 
 pub fn get_admin_keypair() -> Keypair {
     //Load admin keypair
@@ -68,11 +68,18 @@ pub fn create_keypair(
         println!("Successfully created keypair file at {}", file_path);
     }
 
+    store_secret("keypairs.txt", &keypair);
+
+    Ok(keypair)
+}
+
+pub fn store_secret(file: &str, keypair: &Keypair) {
     // Append private key to keypairs.txt
     let keypairs_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("keypairs.txt")?;
+        .open(file)
+        .unwrap();
     let mut writer = BufWriter::new(keypairs_file);
 
     // Format: pubkey:private_key_bytes
@@ -81,10 +88,9 @@ pub fn create_keypair(
         "{}:{}",
         keypair.pubkey(),
         bs58::encode(&keypair.to_bytes()).into_string()
-    )?;
-    writer.flush()?;
-
-    Ok(keypair)
+    )
+    .unwrap();
+    writer.flush().unwrap();
 }
 
 //load keypair from file
@@ -93,12 +99,6 @@ pub fn load_keypair(path: &str) -> Result<Keypair> {
     let reader = BufReader::new(file);
     let wallet: Vec<u8> = serde_json::from_reader(reader)?;
     Ok(Keypair::from_bytes(&wallet)?)
-}
-
-pub fn transfer_ix(from: &Pubkey, to: &Pubkey, amount: u64) -> Instruction {
-    let main_transfer_ix: Instruction = system_instruction::transfer(&from, &to, amount);
-
-    main_transfer_ix
 }
 
 pub fn build_transaction(
@@ -166,7 +166,11 @@ pub fn get_keypairs_for_pubkey(
     Ok(keypairs)
 }
 
-pub async fn get_ata_balance(client: &RpcClient, keypair: &Keypair, mint: &Pubkey) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn get_ata_balance(
+    client: &RpcClient,
+    keypair: &Keypair,
+    mint: &Pubkey,
+) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let ata = get_associated_token_address(&keypair.pubkey(), mint);
 
     let balance = client.get_token_account_balance(&ata)?;

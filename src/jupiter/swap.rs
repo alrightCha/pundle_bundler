@@ -16,6 +16,7 @@ use solana_sdk::{
     system_instruction::transfer,
 };
 use spl_token::amount_to_ui_amount;
+use std::cmp::min;
 use std::str::FromStr;
 
 pub async fn swap_ixs(
@@ -118,9 +119,10 @@ pub async fn shadow_swap(
     mint: Pubkey,
     recipient: Pubkey,
     slippage_bps: Option<u64>,
+    amount: u64
 ) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
-    let amount = get_ata_balance(&client, &keypair, &mint).await.unwrap();
-
+    let balance: u64 = get_ata_balance(&client, &keypair, &mint).await.unwrap();
+    let swap_amount: u64 = min(amount, balance);  //In case we are doing the last transfer and the balance turned out to be less
     let mut instructions = Vec::new();
     let ata: Pubkey = get_associated_token_address(&recipient, &ID);
 
@@ -136,7 +138,7 @@ pub async fn shadow_swap(
     let quotes = jup_ag::quote(
         mint,
         ID,
-        amount,
+        swap_amount,
         QuoteConfig {
             only_direct_routes,
             slippage_bps: Some(slippage_bps),

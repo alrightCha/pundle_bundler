@@ -2,10 +2,9 @@ use std::str::FromStr;
 
 use solana_sdk::pubkey::Pubkey;
 
-pub const TRUMP: &str = "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN"; //1
-
+const TRUMP: &str = "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN"; //1
 const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; //2
-const JUP: &str = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"; //3
+pub const JUP: &str = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"; //3
 const POPCAT: &str = "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr"; //4
 const FARTCOIN: &str = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"; //5
 const WIF: &str = "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"; //6
@@ -25,6 +24,52 @@ const HARAMBE: &str = "Fch1oixTPri8zxBnmdCEADoJW2toyFHxqDZacQkwdvSP"; //19
 const SIGMA: &str = "5SVG3T9CNQsm2kEwzbRq6hASqh1oGfjqTtLXYUibpump"; //20
 const PWEASE: &str = "CniPCE4b3s8gSUPhUiyMjXnytrEqUrMfSsnbBjLCpump"; //21
 const AI16Z: &str = "HeLp6NuQkmYB4pYWo2zYs22mESHXPQYzXbB8n4V98jwC"; //22
+const JITOSOL: &str = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"; //23
+const MSOL: &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So"; //24
+const WBTC: &str = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"; //25
+const EURC: &str = "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"; //26
+const ZBTC: &str = "zBTCug3er3tLyffELcvDNrKkCymbPWysGcWihESYfLg"; //27
+
+const AG1: &str = "BQ72nSv9f3PRyRKCBnHLVrerrv37CYTHm5h3s9VSGQDV";
+const AG2: &str = "2MFoS3MPtvyQ4Wh4M9pdfPjz6UhVoNbFbGJAskCPCj3h";
+const AG3: &str = "HU23r7UoZbqTUuh3vA7emAGztFtqwTeVips789vqxxBw";
+const AG4: &str = "3CgvbiM3op4vjrrjH2zcrQUwsqh5veNVRjFCB9N6sRoD";
+const AG5: &str = "6LXutJvKUw8Q5ue2gCgKHQdAN4suWW8awzFVC6XCguFx";
+const AG6: &str = "CapuXNQoDviLvU1PxFiizLgPNQCxrsag1uMeyk6zLVps";
+const AG7: &str = "GGztQqQ6pCPaJQnNpXBgELr5cs3WwDakRbh1iEMzjgSJ";
+const AG8: &str = "9nnLbotNTcUhvbrsA6Mdkx45Sm82G35zo28AqUvjExn8";
+const AG9: &str = "3LoAYHuSd7Gh8d7RTFnhvYtiTiefdZ5ByamU42vkzd76";
+const AG10: &str = "DSN3j1ykL3obAVNv7ZX49VsFCPe4LqzxHnmtLiPwY6xg";
+const AG11: &str = "69yhtoJR4JYPPABZcSNkzuqbaFbwHsCkja1sP1Q2aVT5";
+const AG12: &str = "6U91aKa8pmMxkJwBCfPTmUEfZi6dHe7DcFq2ALvB2tbB";
+const AG13: &str = "7iWnBRRhBCiNXXPhqiGzvvBkKrvFSWqqmxRyu9VyYBxE";
+const AG14: &str = "4xDsmeTWPNjgSVSS1VTfzFq3iHZhp77ffPkAmkZkdu71";
+const AG15: &str = "GP8StUXNYSZjPikyRsvkTbvRV1GBxMErb59cpeCJnDf1";
+const AG16: &str = "HFqp6ErWHY6Uzhj8rFyjYuDya2mXUpYEk8VW75K9PSiY";
+
+pub fn get_aggregators() -> Vec<Pubkey> {
+    let ag_1 = Pubkey::from_str(AG1).unwrap();
+    let ag_2 = Pubkey::from_str(AG1).unwrap();
+    let ag_3 = Pubkey::from_str(AG1).unwrap();
+    let ag_4 = Pubkey::from_str(AG1).unwrap();
+    let ag_5 = Pubkey::from_str(AG1).unwrap();
+    let ag_6 = Pubkey::from_str(AG1).unwrap();
+    let ag_7 = Pubkey::from_str(AG1).unwrap();
+    let ag_8 = Pubkey::from_str(AG1).unwrap();
+    let ag_9 = Pubkey::from_str(AG1).unwrap();
+    let ag_10 = Pubkey::from_str(AG1).unwrap();
+    let ag_11 = Pubkey::from_str(AG1).unwrap();
+    let ag_12 = Pubkey::from_str(AG1).unwrap();
+    let ag_13 = Pubkey::from_str(AG1).unwrap();
+    let ag_14 = Pubkey::from_str(AG1).unwrap();
+    let ag_15 = Pubkey::from_str(AG1).unwrap();
+    let ag_16 = Pubkey::from_str(AG1).unwrap();
+
+    vec![
+        ag_1, ag_2, ag_3, ag_4, ag_5, ag_6, ag_7, ag_8, ag_9, ag_10, ag_11, ag_12, ag_13, ag_14,
+        ag_15, ag_16,
+    ]
+}
 
 pub fn init_mints() -> Vec<Pubkey> {
     let usdc: Pubkey = Pubkey::from_str(USDC).unwrap();
@@ -49,6 +94,15 @@ pub fn init_mints() -> Vec<Pubkey> {
     let sigma: Pubkey = Pubkey::from_str(SIGMA).unwrap();
     let pwease: Pubkey = Pubkey::from_str(PWEASE).unwrap();
     let ai16z: Pubkey = Pubkey::from_str(AI16Z).unwrap();
+    let jitosol: Pubkey = Pubkey::from_str(JITOSOL).unwrap();
+    let msol: Pubkey = Pubkey::from_str(MSOL).unwrap();
+    let wbtc: Pubkey = Pubkey::from_str(WBTC).unwrap();
+    let eurc: Pubkey = Pubkey::from_str(EURC).unwrap();
+    let zbtc: Pubkey = Pubkey::from_str(ZBTC).unwrap();
 
-    vec![trump, usdc , jup, popcat, fartcoin, wif, pnut, fwog, giga, goat, griffain, michi, moodeng, alch, ray, ufd, retardio, butthole, harambe, sigma, pwease, ai16z]
+    vec![
+        trump, usdc, jup, popcat, fartcoin, wif, pnut, fwog, giga, goat, griffain, michi, moodeng,
+        alch, ray, ufd, retardio, butthole, harambe, sigma, pwease, ai16z, jitosol, msol, wbtc,
+        eurc, zbtc,
+    ]
 }
