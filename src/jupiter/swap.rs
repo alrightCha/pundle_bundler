@@ -229,24 +229,23 @@ pub async fn rate(
 
 #[cfg(test)]
 mod tests {
+    use crate::warmup::spls::JUP;
+
     use super::*;
     use std::str::FromStr;
 
-    // USDC mint on mainnet (6 decimals)
-    const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-
     #[tokio::test]
-    async fn test_usdc_to_sol() {
-        let usdc = Pubkey::from_str(USDC_MINT).unwrap();
-        let amount = 150; // 1 USDC
+    async fn test_jup_to_sol() {
+        let usdc = Pubkey::from_str(JUP).unwrap();
+        let amount = 200;
         let out = rate(usdc, amount, true).await.unwrap();
-        println!("1 USDC → ~{} lamports", out);
+        println!("1 JUP → ~{} lamports", out);
         assert!(out > 0);
     }
 
     #[tokio::test]
     async fn test_sol_to_usdc() {
-        let usdc = Pubkey::from_str(USDC_MINT).unwrap();
+        let usdc = Pubkey::from_str(JUP).unwrap();
         let amount = 1; // 1 SOL
         let out = rate(usdc, amount, false).await.unwrap();
         println!("1 SOL → ~{} usdc micro-units", out);

@@ -122,10 +122,7 @@ pub fn build_transaction(
         signers.push(payer);
     }
 
-    // Ensure there is at least one keypair to use as the payer
-    if keypairs.is_empty() {
-        signers.push(payer);
-    }
+    println!("Signers count: {}", signers.len()); 
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
     tx

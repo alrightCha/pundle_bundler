@@ -151,11 +151,14 @@ impl TokenManager {
                 maybe_ixs.push(ix.clone());
             }
             maybe_ixs.push(ix.clone());
-
+            println!("#1"); 
+            self.print_signers(&maybe_ixs); 
             let maybe_tx =
                 build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
             let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
             if size > 1232 {
+                println!("#2"); 
+                self.print_signers(&tx_ixs); 
                 let tx = build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
                 bundle_txs.push(tx);
                 tx_ixs = vec![fee_ix.clone(), ix.clone()];
@@ -169,6 +172,8 @@ impl TokenManager {
 
         if tx_ixs.len() > 1 {
             tx_ixs.push(tip_ix);
+            println!("#3"); 
+            self.print_signers(&tx_ixs); 
             let last_tx =
                 build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
             bundle_txs.push(last_tx);
@@ -254,5 +259,13 @@ impl TokenManager {
                 );
             }
         };
+    }
+
+    fn print_signers(&self, ixs: &Vec<Instruction>) {
+        for ix in ixs {
+            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
+                println!("Signer needed: {}", acc.pubkey.to_string()); 
+            }
+        }
     }
 }
