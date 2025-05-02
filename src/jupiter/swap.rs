@@ -179,6 +179,7 @@ pub async fn tokens_for_sol(
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let rate = rate(base_mint, amount, false).await; 
     if let Ok(rate) = rate{
+        println!("Mint: {}", base_mint); 
         println!("Rate found for {} SOL: {} JUP.", amount, rate); 
     }
     rate
