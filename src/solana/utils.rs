@@ -108,11 +108,6 @@ pub fn build_transaction(
     lut: AddressLookupTableAccount,
     payer: &Keypair,
 ) -> VersionedTransaction {
-    // Ensure there is at least one keypair to use as the payer
-    if keypairs.is_empty() {
-        panic!("At least one keypair is required to build a transaction.");
-    }
-
     let (_, blockhash) = get_slot_and_blockhash(client).unwrap();
 
     let message = Message::try_compile(&payer.pubkey(), ixes, &[lut], blockhash).unwrap();
