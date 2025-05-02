@@ -160,6 +160,7 @@ impl TokenManager {
             let maybe_tx =
                 build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
             let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+            println!("Maybe instruction count: {:?}", maybe_ixs.len()); 
             println!("Maybe size is: {:?}", size); 
             if size >= 1232 {
                 println!("#2");
