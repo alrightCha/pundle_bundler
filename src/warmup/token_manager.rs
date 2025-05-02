@@ -76,12 +76,11 @@ impl TokenManager {
         for wallet in wallets.iter() {
             if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
                 total += wallet.amount;
-
                 let new_kp = Keypair::new();
                 store_secret("hops.txt", &new_kp);
                 self.hop_to_pubkey
                     .insert(new_kp.pubkey(), wallet.keypair.pubkey());
-
+                println!("Amount in JUP: {} for wallet: {}", amount, new_kp.pubkey().to_string()); 
                 self.handle_wallet(amount, new_kp);
             }
         }

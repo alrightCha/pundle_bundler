@@ -78,11 +78,11 @@ pub async fn swap_ixs(
         .unwrap_or_else(|| "Unknown DEX".to_string());
 
     println!(
-        "Quote: {} SOL for {} USDC via {} (worst case with slippage: {}). Impact: {:.2}%",
+        "Quote: {} SOL for {} JUP via {} (worst case with slippage: {}). Impact: {:.2}%",
         amount_to_ui_amount(quotes.in_amount, 9),
-        amount_to_ui_amount(quotes.out_amount, 9),
+        amount_to_ui_amount(quotes.out_amount, 6),
         route,
-        amount_to_ui_amount(quotes.other_amount_threshold, 9),
+        amount_to_ui_amount(quotes.other_amount_threshold, 6),
         quotes.price_impact_pct * 100.
     );
 
@@ -121,8 +121,7 @@ pub async fn shadow_swap(
     slippage_bps: Option<u64>,
     amount: u64
 ) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
-    let balance: u64 = get_ata_balance(&client, &keypair, &mint).await.unwrap();
-    let swap_amount: u64 = min(amount, balance);  //In case we are doing the last transfer and the balance turned out to be less
+    println!("Collecting shadow swap IX for {} with passed amount {}", recipient.to_string(), amount); 
     let mut instructions = Vec::new();
     let ata: Pubkey = get_associated_token_address(&recipient, &ID);
 
@@ -138,7 +137,7 @@ pub async fn shadow_swap(
     let quotes = jup_ag::quote(
         mint,
         ID,
-        swap_amount,
+        amount,
         QuoteConfig {
             only_direct_routes,
             slippage_bps: Some(slippage_bps),
