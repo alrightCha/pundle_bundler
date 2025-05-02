@@ -75,7 +75,7 @@ impl TokenManager {
         let mut total: u64 = 0;
         for wallet in wallets.iter() {
             if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
-                total += amount;
+                total += wallet.amount;
 
                 let new_kp = Keypair::new();
                 store_secret("hops.txt", &new_kp);
@@ -85,7 +85,6 @@ impl TokenManager {
                 self.handle_wallet(amount, new_kp);
             }
         }
-
         let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
             .await
             .unwrap();

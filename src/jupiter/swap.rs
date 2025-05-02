@@ -178,7 +178,11 @@ pub async fn tokens_for_sol(
     base_mint: Pubkey,
     amount: u64,
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-    rate(base_mint, amount, false).await
+    let rate = rate(base_mint, amount, false).await; 
+    if let Ok(rate) = rate{
+        println!("Rate found for {} SOL: {} JUP.", amount, rate); 
+    }
+    rate
 }
 
 pub async fn rate(
