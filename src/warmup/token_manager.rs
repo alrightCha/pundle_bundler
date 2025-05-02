@@ -13,10 +13,7 @@ use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::T
 use solana_sdk::{compute_budget::ComputeBudgetInstruction, system_instruction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
 use solana_sdk::{sysvar::rent::Rent, transaction::VersionedTransaction};
-use std::{
-    collections::HashMap,
-    str::FromStr,
-};
+use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
  * generate new hop keypair for each buying keypair
@@ -188,9 +185,21 @@ impl TokenManager {
                 .await;
         }
 
-        //If final funding balance is higher than 0, we have successfully funded all hop keypairs 
-        let final_balance = self.client.get_balance(&self.last_funding).unwrap();
-        final_balance > 0
+        //If final funding balance is higher than 0, we have successfully funded all hop keypairs
+        let mut retries = 0; 
+        while retries < 3{
+            let res = self.client.get_balance(&self.last_funding).unwrap();
+            let final_balance = res > 0;
+            if !final_balance{
+                println!("Final balance not reached, retrying.."); 
+                sleep(Duration::from_secs(5));
+                retries += 1; 
+            }else{
+                println!("Final balance has been reached"); 
+                return true; 
+            }
+        }
+        false
     }
 
     //4TH CALL: DISTIRBUTE SOL FROM HOP WALLETS TO BUYING WALLETS
