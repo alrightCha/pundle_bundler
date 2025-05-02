@@ -6,13 +6,16 @@ use crate::{
     params::KeypairWithAmount,
     solana::utils::{build_transaction, get_admin_keypair, store_secret},
 };
-
-use anchor_spl::associated_token::get_associated_token_address;
+use anchor_spl::token::spl_token::instruction::close_account;
+use anchor_spl::{
+    associated_token::get_associated_token_address,
+    token::spl_token::{native_mint::ID, ID as SplID},
+};
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
-use solana_sdk::{compute_budget::ComputeBudgetInstruction, system_instruction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use solana_sdk::{sysvar::rent::Rent, transaction::VersionedTransaction};
+use solana_sdk::transaction::VersionedTransaction;
 use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
@@ -80,7 +83,11 @@ impl TokenManager {
                 store_secret("hops.txt", &new_kp);
                 self.hop_to_pubkey
                     .insert(new_kp.pubkey(), wallet.keypair.pubkey());
-                println!("Amount in JUP: {} for wallet: {}", amount, new_kp.pubkey().to_string()); 
+                println!(
+                    "Amount in JUP: {} for wallet: {}",
+                    amount,
+                    new_kp.pubkey().to_string()
+                );
                 self.handle_wallet(amount, new_kp);
             }
         }
@@ -151,14 +158,14 @@ impl TokenManager {
                 maybe_ixs.push(ix.clone());
             }
             maybe_ixs.push(ix.clone());
-            println!("#1"); 
-            self.print_signers(&maybe_ixs); 
+            println!("#1");
+            self.print_signers(&maybe_ixs);
             let maybe_tx =
                 build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
             let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
             if size > 1232 {
-                println!("#2"); 
-                self.print_signers(&tx_ixs); 
+                println!("#2");
+                self.print_signers(&tx_ixs);
                 let tx = build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
                 bundle_txs.push(tx);
                 tx_ixs = vec![fee_ix.clone(), ix.clone()];
@@ -172,8 +179,8 @@ impl TokenManager {
 
         if tx_ixs.len() > 1 {
             tx_ixs.push(tip_ix);
-            println!("#3"); 
-            self.print_signers(&tx_ixs); 
+            println!("#3");
+            self.print_signers(&tx_ixs);
             let last_tx =
                 build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
             bundle_txs.push(last_tx);
@@ -189,17 +196,17 @@ impl TokenManager {
         }
 
         //If final funding balance is higher than 0, we have successfully funded all hop keypairs
-        let mut retries = 0; 
-        while retries < 3{
+        let mut retries = 0;
+        while retries < 3 {
             let res = self.client.get_balance(&self.last_funding).unwrap();
             let final_balance = res > 0;
-            if !final_balance{
-                println!("Final balance not reached, retrying.."); 
+            if !final_balance {
+                println!("Final balance not reached, retrying..");
                 sleep(Duration::from_secs(5));
-                retries += 1; 
-            }else{
-                println!("Final balance has been reached"); 
-                return true; 
+                retries += 1;
+            } else {
+                println!("Final balance has been reached");
+                return true;
             }
         }
         false
@@ -230,15 +237,13 @@ impl TokenManager {
 
     async fn send_tx(&self, signer: &Keypair, to: &Pubkey) {
         let priority_fee_amount = 500_000; // 0.0005 SOL
-        let rent = Rent::default();
-        let rent_exempt_min = rent.minimum_balance(0);
-
-        let amount = self.client.get_balance(&signer.pubkey()).unwrap() - rent_exempt_min - 500_000;
 
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-        let transfer_ix = system_instruction::transfer(&signer.pubkey(), to, amount);
 
-        let instructions: Vec<Instruction> = vec![fee_ix, transfer_ix];
+        let ata: Pubkey = get_associated_token_address(&signer.pubkey(), &ID);
+        let unwrap_wsol = close_account(&SplID, &ata, to, &signer.pubkey(), &[&to]).unwrap();
+
+        let instructions: Vec<Instruction> = vec![fee_ix, unwrap_wsol];
         let blockhash = self.client.get_latest_blockhash().unwrap();
 
         let transaction = Transaction::new_signed_with_payer(
@@ -264,7 +269,7 @@ impl TokenManager {
     fn print_signers(&self, ixs: &Vec<Instruction>) {
         for ix in ixs {
             for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                println!("Signer needed: {}", acc.pubkey.to_string()); 
+                println!("Signer needed: {}", acc.pubkey.to_string());
             }
         }
     }

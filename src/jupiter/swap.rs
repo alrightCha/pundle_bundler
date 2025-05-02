@@ -1,7 +1,6 @@
 use crate::config::{ADMIN_PUBKEY, RPC_URL};
 use crate::solana::utils::get_ata_balance;
 use anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account;
-use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
     associated_token::get_associated_token_address,
     token::spl_token::{native_mint::ID, ID as SplID},
@@ -16,7 +15,6 @@ use solana_sdk::{
     system_instruction::transfer,
 };
 use spl_token::amount_to_ui_amount;
-use std::cmp::min;
 use std::str::FromStr;
 
 pub async fn swap_ixs(
@@ -158,11 +156,7 @@ pub async fn shadow_swap(
     let swap_instructions = jup_ag::swap_instructions(request).await?;
 
     instructions.extend(swap_instructions.setup_instructions);
-    instructions.push(swap_instructions.swap_instruction);
-
-    let unwrap_wsol = close_account(&SplID, &ata, &recipient, &recipient, &[&recipient]).unwrap();
-    instructions.push(unwrap_wsol);
-
+    instructions.push(swap_instructions.swap_instruction); 
     Ok(instructions)
 }
 
