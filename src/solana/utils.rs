@@ -121,6 +121,11 @@ pub fn build_transaction(
     if !signers.iter().any(|kp| kp.pubkey() == payer.pubkey()) {
         signers.push(payer);
     }
+
+    // Ensure there is at least one keypair to use as the payer
+    if keypairs.is_empty() {
+        signers.push(payer);
+    }
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
     tx
