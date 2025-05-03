@@ -4,7 +4,7 @@ use crate::{
     jito::jito::JitoBundle,
     jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
-    solana::utils::{build_transaction, get_admin_keypair, store_secret, test_transactions},
+    solana::utils::{build_transaction, get_admin_keypair, store_secret},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -19,7 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
+use std::{collections::HashMap, str::FromStr};
 
 /**
  * generate new hop keypair for each buying keypair
@@ -94,15 +94,15 @@ impl TokenManager {
         let shadow_swaps: Vec<(Vec<Instruction>, Vec<Pubkey>)> = self.hop_alloc_ixs().await;
 
         let mut counter = 1;
-        
-        for (ixs, luts) in shadow_swaps {
+        let swap_count = shadow_swaps.len();
+        for (index, (ixs, luts)) in shadow_swaps.iter().enumerate() {
             let mut final_ixs: Vec<Instruction> = Vec::new();
             final_ixs.push(fee_ix.clone());
-            final_ixs.extend(ixs);
-            if counter % 5 == 4 {
+            final_ixs.extend(ixs.clone());
+            if counter % 5 == 4 || swap_count < 5 && index == swap_count - 1 {
                 final_ixs.push(tip_ix.clone());
             }
-            let tx = self.build_transaction_multi_luts(final_ixs, luts);
+            let tx = self.build_transaction_multi_luts(final_ixs, luts.clone());
             txs.push(tx);
             counter += 1;
         }
