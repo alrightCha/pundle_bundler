@@ -135,7 +135,7 @@ impl TokenManager {
         total = total * 97 / 100; 
         let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0); 
         for wallet in wallets.iter() {
-            let amount = wallet.amount / total *  total_tokens; 
+            let amount = wallet.amount * total_tokens / total; 
             let new_kp = Keypair::new();
             store_secret("hops.txt", &new_kp);
             self.hop_to_pubkey
