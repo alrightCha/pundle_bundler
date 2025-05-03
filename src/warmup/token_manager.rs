@@ -1,4 +1,4 @@
-use super::spls::{get_aggregators, JUP};
+use super::spls::JUP;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
@@ -12,7 +12,10 @@ use anchor_spl::{
     token::spl_token::{native_mint::ID, ID as SplID},
 };
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::message::v0::Message;
+use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
@@ -44,7 +47,6 @@ pub struct TokenManager {
     hop_to_pubkey: HashMap<Pubkey, Pubkey>,
     admin: Keypair,
     client: RpcClient,
-    shadow_ixs: Vec<Instruction>,
     last_funding: Pubkey,
 }
 
@@ -56,8 +58,6 @@ impl TokenManager {
         let hop_to_pubkey: HashMap<Pubkey, Pubkey> = HashMap::new();
         let admin = get_admin_keypair();
         let client = RpcClient::new(RPC_URL);
-
-        let shadow_ixs: Vec<Instruction> = Vec::new();
         let last_funding = Pubkey::default();
 
         Self {
@@ -67,14 +67,70 @@ impl TokenManager {
             hop_to_pubkey,
             admin,
             client,
-            shadow_ixs,
             last_funding,
         }
     }
 
+    //TODO: Implement retry here
+    pub async fn shadow_bundle(
+        &mut self,
+        wallets: &Vec<KeypairWithAmount>,
+        lut: &AddressLookupTableAccount,
+    ) {
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
+        let priority_fee_amount = 500_000; // 0.0005 SOL
+        let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
+
+        let mut txs: Vec<VersionedTransaction> = Vec::new();
+
+        let fund_ixs = self.init_alloc_ixs(wallets).await;
+
+        let fund_tx = build_transaction(&self.client, &fund_ixs, vec![], lut.clone(), &self.admin);
+        txs.push(fund_tx);
+
+        let shadow_swaps: Vec<(Vec<Instruction>, Vec<Pubkey>)> = self.hop_alloc_ixs().await;
+
+        let mut counter = 1;
+        
+        for (ixs, luts) in shadow_swaps {
+            let mut final_ixs: Vec<Instruction> = Vec::new();
+            final_ixs.push(fee_ix.clone());
+            final_ixs.extend(ixs);
+            if counter % 5 == 4 {
+                final_ixs.push(tip_ix.clone());
+            }
+            let tx = self.build_transaction_multi_luts(final_ixs, luts);
+            txs.push(tx);
+            counter += 1;
+        }
+
+        let chunks: Vec<_> = txs.chunks(5).collect();
+
+        for chunk in chunks {
+            let chunk_vec = chunk.to_vec();
+            let _ = jito
+                .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
+                .await;
+        }
+    }
+
+    //4TH CALL: DISTIRBUTE SOL FROM HOP WALLETS TO BUYING WALLETS
+    pub async fn final_distribute(&mut self) {
+        for (pubkey, keypair) in self.pubkey_to_keypair.iter() {
+            let buying_pubkey = self.hop_to_pubkey.get(&*pubkey);
+            if let Some(buying_pubkey) = buying_pubkey {
+                self.send_tx(keypair, buying_pubkey).await;
+            }
+        }
+        self.reset_maps();
+    }
+
     //1ST CALL
     //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
-    pub async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) {
+    async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) -> Vec<Instruction> {
         let mut total: u64 = 0;
         for wallet in wallets.iter() {
             if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
@@ -88,42 +144,21 @@ impl TokenManager {
                     amount,
                     new_kp.pubkey().to_string()
                 );
-                let safe_amount = amount * 97 / 100; 
+                let safe_amount = amount * 97 / 100;
                 self.handle_wallet(safe_amount, new_kp);
             }
         }
         let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
             .await
             .unwrap();
-        //Reset our shadow vector and extend it
-        self.shadow_ixs = Vec::new();
-        self.shadow_ixs.extend(swap_ixs);
-        self.hop_alloc_ixs().await;
-    }
 
-    //2ND CALL
-    //Return :
-    //Admin jup token account pubkey
-    //Jup address
-    //hop pubkeys
-    //Jup aggregators
-    pub fn get_pubkeys_for_lut(&self) -> Vec<Pubkey> {
-        let mut pubkeys: Vec<Pubkey> = Vec::new();
-        pubkeys.push(self.jup.clone());
-        let admin_jup_ata = get_associated_token_address(&self.admin.pubkey(), &self.jup);
-        pubkeys.push(admin_jup_ata);
-        for (pubkey, _) in self.pubkey_to_keypair.iter() {
-            pubkeys.push(pubkey.clone());
-        }
-        let aggregators = get_aggregators();
-        pubkeys.extend(aggregators);
-        pubkeys
+        swap_ixs
     }
 
     //3RD CALL -> GET IXS
     //Distributes tokens to respective token accounts, then cleans up token accounts and unwraps wsol to sol with jup cleanup and gasless txs
-    async fn hop_alloc_ixs(&mut self) {
-        let mut discrete_swaps_ixs: Vec<Instruction> = Vec::new();
+    async fn hop_alloc_ixs(&mut self) -> Vec<(Vec<Instruction>, Vec<Pubkey>)> {
+        let mut discrete_swaps_txs: Vec<(Vec<Instruction>, Vec<Pubkey>)> = Vec::new();
         for (pubkey, amount) in self.wallet_to_amount.iter() {
             let swap_ixs = shadow_swap(
                 &self.client,
@@ -135,98 +170,10 @@ impl TokenManager {
             )
             .await
             .unwrap();
-            discrete_swaps_ixs.extend(swap_ixs);
+            discrete_swaps_txs.push(swap_ixs);
             self.last_funding = pubkey.clone();
         }
-        self.shadow_ixs.extend(discrete_swaps_ixs);
-    }
-
-    //TODO: Implement retry here
-    pub async fn shadow_bundle(&self, lut: &AddressLookupTableAccount) -> bool {
-        let priority_fee_amount = 500_000; // 0.0005 SOL
-        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
-
-        let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
-        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
-
-        let mut bundle_txs: Vec<VersionedTransaction> = Vec::new();
-        let mut tx_ixs: Vec<Instruction> = Vec::new();
-        tx_ixs.push(fee_ix.clone());
-
-        let mut pushed = false;
-        for ix in self.shadow_ixs.iter() {
-            let mut maybe_ixs: Vec<Instruction> = tx_ixs.clone();
-            maybe_ixs.push(ix.clone());
-            println!("#1");
-            self.print_signers(&maybe_ixs);
-            let maybe_tx =
-                build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
-            let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
-            println!("Maybe instruction count: {:?}", maybe_ixs.len());
-            println!("Maybe size is: {:?}", size);
-            if size >= 1232 {
-                println!("#2");
-                self.print_signers(&tx_ixs);
-                let tx = build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
-                bundle_txs.push(tx);
-                tx_ixs = vec![fee_ix.clone(), ix.clone()];
-                if bundle_txs.len() % 5 == 4 && !pushed {
-                    tx_ixs.push(tip_ix.clone());
-                    pushed = true;
-                } else {
-                    pushed = false;
-                }
-            } else {
-                tx_ixs.push(ix.clone());
-            }
-        }
-
-        if tx_ixs.len() > 1 {
-            tx_ixs.push(tip_ix);
-            println!("#3");
-            self.print_signers(&tx_ixs);
-            let last_tx =
-                build_transaction(&self.client, &tx_ixs, vec![], lut.clone(), &self.admin);
-            bundle_txs.push(last_tx);
-        }
-
-        test_transactions(&self.client, &bundle_txs).await;
-
-        let chunks: Vec<_> = bundle_txs.chunks(5).collect();
-
-        for chunk in chunks {
-            let chunk_vec = chunk.to_vec();
-            let _ = jito
-                .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
-                .await;
-        }
-
-        //If final funding balance is higher than 0, we have successfully funded all hop keypairs
-        let mut retries = 0;
-        while retries < 3 {
-            let res = self.client.get_balance(&self.last_funding).unwrap();
-            let final_balance = res > 0;
-            if !final_balance {
-                println!("Final balance not reached, retrying..");
-                sleep(Duration::from_secs(5));
-                retries += 1;
-            } else {
-                println!("Final balance has been reached");
-                return true;
-            }
-        }
-        false
-    }
-
-    //4TH CALL: DISTIRBUTE SOL FROM HOP WALLETS TO BUYING WALLETS
-    pub async fn final_distribute(&mut self) {
-        for (pubkey, keypair) in self.pubkey_to_keypair.iter() {
-            let buying_pubkey = self.hop_to_pubkey.get(&*pubkey);
-            if let Some(buying_pubkey) = buying_pubkey {
-                self.send_tx(keypair, buying_pubkey).await;
-            }
-        }
-        self.reset_maps();
+        discrete_swaps_txs
     }
 
     fn handle_wallet(&mut self, amount: u64, wallet: Keypair) {
@@ -278,5 +225,37 @@ impl TokenManager {
                 println!("Signer needed: {}", acc.pubkey.to_string());
             }
         }
+    }
+
+    fn build_transaction_multi_luts(
+        &self,
+        ixes: Vec<Instruction>,
+        luts: Vec<Pubkey>,
+    ) -> VersionedTransaction {
+        let blockhash = self.client.get_latest_blockhash().unwrap();
+
+        let mut all_luts: Vec<AddressLookupTableAccount> = Vec::new();
+
+        for lut in luts {
+            let raw_account = self.client.get_account(&lut).unwrap();
+            let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+
+            let address_lookup_table_account = AddressLookupTableAccount {
+                key: lut,
+                addresses: address_lookup_table.addresses.to_vec(),
+            };
+            all_luts.push(address_lookup_table_account);
+        }
+
+        let message =
+            Message::try_compile(&self.admin.pubkey(), &ixes, &all_luts, blockhash).unwrap();
+
+        // Compile the message with the payer's public key
+
+        let versioned_message = VersionedMessage::V0(message);
+
+        // Create the transaction with all keypairs as signers
+        VersionedTransaction::try_new(versioned_message, &vec![&self.admin.insecure_clone()])
+            .unwrap()
     }
 }

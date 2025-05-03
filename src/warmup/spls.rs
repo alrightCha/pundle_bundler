@@ -49,21 +49,21 @@ const AG16: &str = "HFqp6ErWHY6Uzhj8rFyjYuDya2mXUpYEk8VW75K9PSiY";
 
 pub fn get_aggregators() -> Vec<Pubkey> {
     let ag_1 = Pubkey::from_str(AG1).unwrap();
-    let ag_2 = Pubkey::from_str(AG1).unwrap();
-    let ag_3 = Pubkey::from_str(AG1).unwrap();
-    let ag_4 = Pubkey::from_str(AG1).unwrap();
-    let ag_5 = Pubkey::from_str(AG1).unwrap();
-    let ag_6 = Pubkey::from_str(AG1).unwrap();
-    let ag_7 = Pubkey::from_str(AG1).unwrap();
-    let ag_8 = Pubkey::from_str(AG1).unwrap();
-    let ag_9 = Pubkey::from_str(AG1).unwrap();
-    let ag_10 = Pubkey::from_str(AG1).unwrap();
-    let ag_11 = Pubkey::from_str(AG1).unwrap();
-    let ag_12 = Pubkey::from_str(AG1).unwrap();
-    let ag_13 = Pubkey::from_str(AG1).unwrap();
-    let ag_14 = Pubkey::from_str(AG1).unwrap();
-    let ag_15 = Pubkey::from_str(AG1).unwrap();
-    let ag_16 = Pubkey::from_str(AG1).unwrap();
+    let ag_2 = Pubkey::from_str(AG2).unwrap();
+    let ag_3 = Pubkey::from_str(AG3).unwrap();
+    let ag_4 = Pubkey::from_str(AG4).unwrap();
+    let ag_5 = Pubkey::from_str(AG5).unwrap();
+    let ag_6 = Pubkey::from_str(AG6).unwrap();
+    let ag_7 = Pubkey::from_str(AG7).unwrap();
+    let ag_8 = Pubkey::from_str(AG8).unwrap();
+    let ag_9 = Pubkey::from_str(AG9).unwrap();
+    let ag_10 = Pubkey::from_str(AG10).unwrap();
+    let ag_11 = Pubkey::from_str(AG11).unwrap();
+    let ag_12 = Pubkey::from_str(AG12).unwrap();
+    let ag_13 = Pubkey::from_str(AG13).unwrap();
+    let ag_14 = Pubkey::from_str(AG14).unwrap();
+    let ag_15 = Pubkey::from_str(AG15).unwrap();
+    let ag_16 = Pubkey::from_str(AG16).unwrap();
 
     vec![
         ag_1, ag_2, ag_3, ag_4, ag_5, ag_6, ag_7, ag_8, ag_9, ag_10, ag_11, ag_12, ag_13, ag_14,

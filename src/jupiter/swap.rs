@@ -120,7 +120,7 @@ pub async fn shadow_swap(
     recipient: Pubkey,
     slippage_bps: Option<u64>,
     amount: u64,
-) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<Instruction>, Vec<Pubkey>), Box<dyn std::error::Error + Send + Sync>> {
     println!(
         "Collecting shadow swap IX for {} with passed amount {}",
         recipient.to_string(),
@@ -136,7 +136,7 @@ pub async fn shadow_swap(
     }
 
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = false; //Might need to change this
+    let only_direct_routes = true; 
 
     let quotes = jup_ag::quote(
         mint,
@@ -163,7 +163,9 @@ pub async fn shadow_swap(
 
     instructions.extend(swap_instructions.setup_instructions);
     instructions.push(swap_instructions.swap_instruction);
-    Ok(instructions)
+
+    let luts = swap_instructions.address_lookup_table_addresses; 
+    Ok((instructions, luts))
 }
 
 pub async fn sol_for_tokens(

@@ -84,18 +84,6 @@ pub async fn process_bundle(
         all_transfers.push(new_transfer);
     }
 
-    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
-    let mut shadow_manager = TokenManager::new();
-
-    // > Instructions to execute swap to USDC with funding admin wallet
-    // > fill up lUTS with new hop keypairs
-    //> Instructions to swap USDC to ATA of hop accounts
-    shadow_manager.init_alloc_ixs(&all_transfers).await;
-
-    //ADDING EXTRA PUBKEYS FOR HOPS
-    let extra_pubkeys = shadow_manager.get_pubkeys_for_lut();
-    pubkeys_for_lut.extend(extra_pubkeys);
-
     let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
         .await
         .unwrap();
@@ -110,9 +98,14 @@ pub async fn process_bundle(
         addresses: address_lookup_table.addresses.to_vec(),
     };
 
+    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
+    let mut shadow_manager = TokenManager::new();
+
     shadow_manager
-        .shadow_bundle(&address_lookup_table_account)
+        .shadow_bundle(&all_transfers, &address_lookup_table_account)
         .await;
+
+    println!("Completed bundle submissions"); 
     //> Transfer sols from hop keypairs to buying keypairs
     shadow_manager.final_distribute().await;
 
