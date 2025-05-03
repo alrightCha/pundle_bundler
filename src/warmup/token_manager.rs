@@ -93,7 +93,7 @@ impl TokenManager {
             let mut final_ixs: Vec<Instruction> = Vec::new();
             final_ixs.push(fee_ix.clone());
             final_ixs.extend(ixs.clone());
-            if counter % 5 == 4 || swap_count < 5 && index == swap_count - 1 {
+            if counter % 5 == 4 || (swap_count < 5 && index == swap_count - 1) {
                 final_ixs.push(tip_ix.clone());
             }
             txs_data.push((final_ixs, luts.clone()));
@@ -111,7 +111,7 @@ impl TokenManager {
 
             let max_retries = 3;
             let mut attempts = 0;
-            
+
             loop {
                 let res = jito
                     .process_bundle(txs.clone(), Pubkey::default(), None)
