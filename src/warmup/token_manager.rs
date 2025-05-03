@@ -195,15 +195,15 @@ impl TokenManager {
 
         let ata: Pubkey = get_associated_token_address(&signer.pubkey(), &ID);
         let unwrap_wsol =
-            close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey()]).unwrap();
+            close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey(), &self.admin.pubkey()]).unwrap();
 
         let instructions: Vec<Instruction> = vec![fee_ix, unwrap_wsol];
         let blockhash = self.client.get_latest_blockhash().unwrap();
 
         let transaction = Transaction::new_signed_with_payer(
             &instructions,
-            Some(&signer.pubkey()),
-            &[&signer],
+            Some(&self.admin.pubkey()),
+            &[&signer, &self.admin.insecure_clone()],
             blockhash,
         );
 
