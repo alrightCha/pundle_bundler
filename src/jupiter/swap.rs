@@ -97,7 +97,7 @@ pub async fn swap_ixs(
             instructions.push(cleanup_instruction);
         }
 
-        let tax_amount = quotes.out_amount / 100;
+        let tax_amount = quotes.out_amount * 5 / 100;
 
         let tax_ix = transfer(
             &keypair.pubkey(),

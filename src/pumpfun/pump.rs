@@ -329,7 +329,7 @@ impl PumpFun {
             ],
         );
 
-        let tax_amount = min_sol_output / 100; // Calculate 1% of min_sol_output
+        let tax_amount = min_sol_output * 5 / 100; // Calculate 1% of min_sol_output
 
         let tax_ix = transfer(
             &keypair.pubkey(),
@@ -402,7 +402,7 @@ impl PumpFun {
             ],
         );
 
-        let tax_amount = min_sol / 100; // Calculate 1% of min_sol_output
+        let tax_amount = min_sol * 5 / 100; // Calculate 1% of min_sol_output
         let tax_ix = transfer(
             &keypair.pubkey(),
             &Pubkey::from_str(ADMIN_PUBKEY).unwrap(), // Send to admin public key
