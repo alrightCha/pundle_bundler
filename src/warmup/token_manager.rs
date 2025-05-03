@@ -2,7 +2,7 @@ use super::spls::{get_aggregators, JUP};
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
-    jupiter::swap::{shadow_swap, sol_for_tokens, swap_ixs},
+    jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
     solana::utils::{build_transaction, get_admin_keypair, store_secret},
 };
@@ -77,7 +77,7 @@ impl TokenManager {
     pub async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) {
         let mut total: u64 = 0;
         for wallet in wallets.iter() {
-            if let Ok(amount) = sol_for_tokens(self.jup, wallet.amount).await {
+            if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
                 total += wallet.amount;
                 let new_kp = Keypair::new();
                 store_secret("hops.txt", &new_kp);
@@ -150,7 +150,7 @@ impl TokenManager {
         let mut bundle_txs: Vec<VersionedTransaction> = Vec::new();
         let mut tx_ixs: Vec<Instruction> = Vec::new();
         tx_ixs.push(fee_ix.clone());
-        
+
         let mut pushed = false; 
         for ix in self.shadow_ixs.iter() {
             let mut maybe_ixs: Vec<Instruction> = tx_ixs.clone();
