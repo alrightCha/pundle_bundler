@@ -131,22 +131,22 @@ impl TokenManager {
     //1ST CALL
     //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
     async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) -> Vec<Instruction> {
-        let mut total: u64 = 0;
+        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum(); 
+        total = total * 97 / 100; 
+        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0); 
         for wallet in wallets.iter() {
-            if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
-                total += wallet.amount;
-                let new_kp = Keypair::new();
-                store_secret("hops.txt", &new_kp);
-                self.hop_to_pubkey
-                    .insert(new_kp.pubkey(), wallet.keypair.pubkey());
-                println!(
-                    "Amount in JUP: {} for wallet: {}",
-                    amount,
-                    new_kp.pubkey().to_string()
-                );
-                let safe_amount = amount * 97 / 100;
-                self.handle_wallet(safe_amount, new_kp);
-            }
+            let amount = wallet.amount / total *  total_tokens; 
+            let new_kp = Keypair::new();
+            store_secret("hops.txt", &new_kp);
+            self.hop_to_pubkey
+                .insert(new_kp.pubkey(), wallet.keypair.pubkey());
+            println!(
+                "Amount in JUP: {} for wallet: {}",
+                amount,
+                new_kp.pubkey().to_string()
+            );
+            let safe_amount = amount * 97 / 100;
+            self.handle_wallet(safe_amount, new_kp);
         }
         let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
             .await
@@ -194,7 +194,8 @@ impl TokenManager {
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
 
         let ata: Pubkey = get_associated_token_address(&signer.pubkey(), &ID);
-        let unwrap_wsol = close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey()]).unwrap();
+        let unwrap_wsol =
+            close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey()]).unwrap();
 
         let instructions: Vec<Instruction> = vec![fee_ix, unwrap_wsol];
         let blockhash = self.client.get_latest_blockhash().unwrap();
