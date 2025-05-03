@@ -2,3 +2,5 @@
 Cargo.lock
 .env
 /accounts
+keypairs.txt 
+hops.txt

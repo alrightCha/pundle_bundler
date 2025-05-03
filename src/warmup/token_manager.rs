@@ -177,8 +177,7 @@ impl TokenManager {
         }
         let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
         total = total * 120 / 100;
-        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0);
-        let result = swap_ixs(&self.admin, self.jup, Some(total_tokens), Some(200), false)
+        let result = swap_ixs(&self.admin, self.jup, Some(total), Some(200), false)
             .await
             .unwrap();
 
