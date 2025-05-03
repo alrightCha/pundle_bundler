@@ -1,4 +1,4 @@
-use super::spls::JUP;
+use super::spls::USDC;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
@@ -52,7 +52,7 @@ pub struct TokenManager {
 
 impl TokenManager {
     pub fn new() -> Self {
-        let jup: Pubkey = Pubkey::from_str(JUP).unwrap();
+        let jup: Pubkey = Pubkey::from_str(USDC).unwrap();
         let pubkey_to_keypair: HashMap<Pubkey, Keypair> = HashMap::new();
         let wallet_to_amount: HashMap<Pubkey, u64> = HashMap::new();
         let hop_to_pubkey: HashMap<Pubkey, Pubkey> = HashMap::new();
