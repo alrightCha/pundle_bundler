@@ -29,7 +29,7 @@ pub async fn swap_ixs(
     let client = RpcClient::new(RPC_URL);
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = true; //Might need to change this
+    let only_direct_routes = false; //Might need to change this
 
     let quotes = match direction {
         true => {
@@ -136,7 +136,7 @@ pub async fn shadow_swap(
     }
 
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = true; 
+    let only_direct_routes = false; 
 
     let quotes = jup_ag::quote(
         mint,

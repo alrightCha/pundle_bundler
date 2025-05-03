@@ -145,10 +145,9 @@ impl TokenManager {
                 amount,
                 new_kp.pubkey().to_string()
             );
-            let safe_amount = amount * 97 / 100;
-            self.handle_wallet(safe_amount, new_kp);
+            self.handle_wallet(amount, new_kp);
         }
-        let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
+        let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), None, false)
             .await
             .unwrap();
 
@@ -165,7 +164,7 @@ impl TokenManager {
                 &self.admin,
                 self.jup,
                 *pubkey,
-                Some(500),
+                None,
                 *amount,
             )
             .await
@@ -218,14 +217,6 @@ impl TokenManager {
                 );
             }
         };
-    }
-
-    fn print_signers(&self, ixs: &Vec<Instruction>) {
-        for ix in ixs {
-            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                println!("Signer needed: {}", acc.pubkey.to_string());
-            }
-        }
     }
 
     fn build_transaction_multi_luts(
