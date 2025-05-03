@@ -4,7 +4,7 @@ use crate::{
     jito::jito::JitoBundle,
     jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
-    solana::utils::{build_transaction, get_admin_keypair, store_secret},
+    solana::utils::{get_admin_keypair, store_secret},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -72,11 +72,7 @@ impl TokenManager {
     }
 
     //TODO: Implement retry here
-    pub async fn shadow_bundle(
-        &mut self,
-        wallets: &Vec<KeypairWithAmount>,
-        lut: &AddressLookupTableAccount,
-    ) {
+    pub async fn shadow_bundle(&mut self, wallets: &Vec<KeypairWithAmount>) {
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
         let priority_fee_amount = 500_000; // 0.0005 SOL
         let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
@@ -84,12 +80,10 @@ impl TokenManager {
 
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
-        let mut txs: Vec<VersionedTransaction> = Vec::new();
+        let mut txs_data: Vec<(Vec<Instruction>, Vec<Pubkey>)> = Vec::new();
 
         let fund_ixs = self.init_alloc_ixs(wallets).await;
-
-        let fund_tx = self.build_transaction_multi_luts(fund_ixs.0, fund_ixs.1);
-        txs.push(fund_tx);
+        txs_data.push(fund_ixs);
 
         let shadow_swaps: Vec<(Vec<Instruction>, Vec<Pubkey>)> = self.hop_alloc_ixs().await;
 
@@ -102,41 +96,48 @@ impl TokenManager {
             if counter % 5 == 4 || swap_count < 5 && index == swap_count - 1 {
                 final_ixs.push(tip_ix.clone());
             }
-            let tx = self.build_transaction_multi_luts(final_ixs, luts.clone());
-            txs.push(tx);
+            txs_data.push((final_ixs, luts.clone()));
             counter += 1;
         }
 
-        let chunks: Vec<_> = txs.chunks(5).collect();
-        let max_retries = 3;
+        let chunks: Vec<_> = txs_data.chunks(5).collect();
+
         for chunk in chunks {
             let chunk_vec = chunk.to_vec();
+            let txs: Vec<VersionedTransaction> = chunk_vec
+                .iter()
+                .map(|data| self.build_transaction_multi_luts(data.0.clone(), data.1.clone()))
+                .collect();
 
+            let max_retries = 3;
             let mut attempts = 0;
-            let res = jito
-                .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
-                .await;
-            match res {
-                Ok(_) => {
-                    println!("✅ Bundle submitted successfully");
-                    break;
-                }
-                Err(err) => {
-                    // Check for "Network congested" rate limit error
-                    let err_str = err.to_string();
-                    if err_str.contains("Network congested") || err_str.contains("429") {
-                        attempts += 1;
-                        if attempts > max_retries {
-                            eprintln!("❌ Max retries reached for bundle: {:?}", err);
+            
+            loop {
+                let res = jito
+                    .process_bundle(txs.clone(), Pubkey::default(), None)
+                    .await;
+                match res {
+                    Ok(_) => {
+                        println!("✅ Bundle submitted successfully");
+                        break;
+                    }
+                    Err(err) => {
+                        // Check for "Network congested" rate limit error
+                        let err_str = err.to_string();
+                        if err_str.contains("Network congested") || err_str.contains("429") {
+                            attempts += 1;
+                            if attempts > max_retries {
+                                eprintln!("❌ Max retries reached for bundle: {:?}", err);
+                                break;
+                            }
+                            let wait_time = Duration::from_millis(500 * attempts as u64);
+                            println!("⚠️ Rate limited. Retrying in {:?}...", wait_time);
+                            sleep(wait_time);
+                        } else {
+                            // Some other error — log and skip
+                            eprintln!("❌ Unexpected error: {:?}", err);
                             break;
                         }
-                        let wait_time = Duration::from_millis(500 * attempts as u64);
-                        println!("⚠️ Rate limited. Retrying in {:?}...", wait_time);
-                        sleep(wait_time);
-                    } else {
-                        // Some other error — log and skip
-                        eprintln!("❌ Unexpected error: {:?}", err);
-                        break;
                     }
                 }
             }

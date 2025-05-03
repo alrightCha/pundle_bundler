@@ -83,6 +83,15 @@ pub async fn process_bundle(
         all_transfers.push(new_transfer);
     }
 
+    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
+    let mut shadow_manager = TokenManager::new();
+
+    shadow_manager.shadow_bundle(&all_transfers).await;
+
+    println!("Completed bundle submissions");
+    //> Transfer sols from hop keypairs to buying keypairs
+    shadow_manager.final_distribute().await;
+
     let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
         .await
         .unwrap();
@@ -96,17 +105,6 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
-
-    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
-    let mut shadow_manager = TokenManager::new();
-
-    shadow_manager
-        .shadow_bundle(&all_transfers, &address_lookup_table_account)
-        .await;
-
-    println!("Completed bundle submissions"); 
-    //> Transfer sols from hop keypairs to buying keypairs
-    shadow_manager.final_distribute().await;
 
     let mut dev_balance = client
         .get_balance(&dev_keypair_with_amount.keypair.pubkey())

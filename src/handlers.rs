@@ -23,7 +23,6 @@ use solana_sdk::transaction::VersionedTransaction;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::spawn;
-use tokio::sync::RwLock;
 
 //Params needed for the handlers
 use crate::params::{KeypairWithAmount, PostBundleRequest, PostBundleResponse, Wallet};
@@ -37,8 +36,6 @@ use crate::solana::helpers::{get_sol_amount, sell_all_txs};
 use crate::solana::utils::{
     create_keypair, get_admin_keypair, get_keypairs_for_pubkey, load_keypair,
 };
-use std::collections::HashMap;
-use tokio::sync::RwLockWriteGuard;
 
 //TODO : Sell all , Sell unique, Sell bulk
 pub async fn health_check() -> &'static str {
