@@ -4,7 +4,7 @@ use crate::{
     jito::jito::JitoBundle,
     jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
-    solana::utils::{get_admin_keypair, store_secret},
+    solana::utils::{get_admin_keypair, store_secret, test_transactions},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -19,8 +19,8 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use tokio::time::Sleep;
 use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
+use tokio::time::Sleep;
 
 /**
  * generate new hop keypair for each buying keypair
@@ -110,39 +110,9 @@ impl TokenManager {
                 .map(|data| self.build_transaction_multi_luts(data.0.clone(), data.1.clone()))
                 .collect();
 
-            let max_retries = 3;
-            let mut attempts = 0;
-
-            sleep(Duration::from_secs(5)); 
-            loop {
-                let res = jito
-                    .process_bundle(txs.clone(), Pubkey::default(), None)
-                    .await;
-                match res {
-                    Ok(_) => {
-                        println!("✅ Bundle submitted successfully");
-                        break;
-                    }
-                    Err(err) => {
-                        // Check for "Network congested" rate limit error
-                        let err_str = err.to_string();
-                        if err_str.contains("Network congested") || err_str.contains("429") {
-                            attempts += 1;
-                            if attempts > max_retries {
-                                eprintln!("❌ Max retries reached for bundle: {:?}", err);
-                                break;
-                            }
-                            let wait_time = Duration::from_millis(500 * attempts as u64);
-                            println!("⚠️ Rate limited. Retrying in {:?}...", wait_time);
-                            sleep(wait_time);
-                        } else {
-                            // Some other error — log and skip
-                            eprintln!("❌ Unexpected error: {:?}", err);
-                            break;
-                        }
-                    }
-                }
-            }
+            let _ = jito
+                .process_bundle(txs.clone(), Pubkey::default(), None)
+                .await;
         }
     }
 
@@ -191,9 +161,16 @@ impl TokenManager {
     async fn hop_alloc_ixs(&mut self) -> Vec<(Vec<Instruction>, Vec<Pubkey>)> {
         let mut discrete_swaps_txs: Vec<(Vec<Instruction>, Vec<Pubkey>)> = Vec::new();
         for (pubkey, amount) in self.wallet_to_amount.iter() {
-            let swap_ixs = shadow_swap(&self.client, &self.admin, self.jup, *pubkey, Some(300), *amount)
-                .await
-                .unwrap();
+            let swap_ixs = shadow_swap(
+                &self.client,
+                &self.admin,
+                self.jup,
+                *pubkey,
+                Some(300),
+                *amount,
+            )
+            .await
+            .unwrap();
             discrete_swaps_txs.push(swap_ixs);
             self.last_funding = pubkey.clone();
         }
