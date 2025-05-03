@@ -161,23 +161,24 @@ impl TokenManager {
         &mut self,
         wallets: &Vec<KeypairWithAmount>,
     ) -> (Vec<Instruction>, Vec<Pubkey>) {
-        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
-        total = total * 97 / 100;
-        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0);
         for wallet in wallets.iter() {
-            let amount = wallet.amount * total_tokens / total;
-            let new_kp = Keypair::new();
-            store_secret("hops.txt", &new_kp);
-            self.hop_to_pubkey
-                .insert(new_kp.pubkey(), wallet.keypair.pubkey());
-            println!(
-                "Amount in JUP: {} for wallet: {}",
-                amount,
-                new_kp.pubkey().to_string()
-            );
-            self.handle_wallet(amount, new_kp);
+            if let Ok(amount) = tokens_for_sol(self.jup, wallet.amount).await {
+                let new_kp = Keypair::new();
+                store_secret("hops.txt", &new_kp);
+                self.hop_to_pubkey
+                    .insert(new_kp.pubkey(), wallet.keypair.pubkey());
+                println!(
+                    "Amount in JUP: {} for wallet: {}",
+                    amount,
+                    new_kp.pubkey().to_string()
+                );
+                self.handle_wallet(amount, new_kp);
+            }
         }
-        let result = swap_ixs(&self.admin, self.jup, Some(total), None, false)
+        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
+        total = total * 120 / 100;
+        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0);
+        let result = swap_ixs(&self.admin, self.jup, Some(total_tokens), None, false)
             .await
             .unwrap();
 
