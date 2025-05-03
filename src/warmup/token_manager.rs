@@ -4,7 +4,7 @@ use crate::{
     jito::jito::JitoBundle,
     jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
-    solana::utils::{build_transaction, get_admin_keypair, store_secret},
+    solana::utils::{build_transaction, get_admin_keypair, store_secret, test_transactions},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -88,7 +88,8 @@ impl TokenManager {
                     amount,
                     new_kp.pubkey().to_string()
                 );
-                self.handle_wallet(amount, new_kp);
+                let safe_amount = amount * 97 / 100; 
+                self.handle_wallet(safe_amount, new_kp);
             }
         }
         let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), Some(500), false)
@@ -140,6 +141,7 @@ impl TokenManager {
         self.shadow_ixs.extend(discrete_swaps_ixs);
     }
 
+    //TODO: Implement retry here
     pub async fn shadow_bundle(&self, lut: &AddressLookupTableAccount) -> bool {
         let priority_fee_amount = 500_000; // 0.0005 SOL
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
@@ -188,20 +190,15 @@ impl TokenManager {
             bundle_txs.push(last_tx);
         }
 
+        test_transactions(&self.client, &bundle_txs).await;
+
         let chunks: Vec<_> = bundle_txs.chunks(5).collect();
 
         for chunk in chunks {
             let chunk_vec = chunk.to_vec();
-            let res = jito
+            let _ = jito
                 .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
                 .await;
-            if let Err(res) = res {
-                println!("Received error {:?} for request, resubmitting bundle...", res);
-                sleep(Duration::from_secs(2));
-                let _ = jito
-                    .process_bundle(chunk_vec, Pubkey::default(), None)
-                    .await;
-            }
         }
 
         //If final funding balance is higher than 0, we have successfully funded all hop keypairs
