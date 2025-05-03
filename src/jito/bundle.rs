@@ -3,7 +3,6 @@ use reqwest::Client as HttpClient;
 
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
-    instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::VersionedTransaction,

@@ -194,7 +194,7 @@ impl TokenManager {
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
 
         let ata: Pubkey = get_associated_token_address(&signer.pubkey(), &ID);
-        let unwrap_wsol = close_account(&SplID, &ata, to, &signer.pubkey(), &[&to]).unwrap();
+        let unwrap_wsol = close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey()]).unwrap();
 
         let instructions: Vec<Instruction> = vec![fee_ix, unwrap_wsol];
         let blockhash = self.client.get_latest_blockhash().unwrap();
