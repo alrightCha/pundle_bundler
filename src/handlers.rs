@@ -229,7 +229,7 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
         let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
             true => {
                 let swap_ixs = swap_ixs(&keypair, mint_pubkey, Some(amount), None, true).await.unwrap();
-                swap_ixs
+                swap_ixs.0
             }
             false => {
                 let pump_ixs = pumpfun_client

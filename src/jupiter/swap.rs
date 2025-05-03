@@ -7,8 +7,8 @@ use anchor_spl::{
     token::spl_token::{native_mint::ID, ID as SplID},
 };
 use jup_ag::{QuoteConfig, SwapRequest};
+use solana_client::nonblocking::rpc_client::RpcClient as NonRpcClient;
 use solana_client::rpc_client::RpcClient;
-use solana_client::nonblocking::rpc_client::RpcClient as NonRpcClient; 
 use solana_sdk::instruction::Instruction;
 
 use solana_sdk::{
@@ -25,11 +25,11 @@ pub async fn swap_ixs(
     amount: Option<u64>,
     slippage_bps: Option<u64>,
     direction: bool,
-) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<Instruction>, Vec<Pubkey>), Box<dyn std::error::Error + Send + Sync>> {
     let client = RpcClient::new(RPC_URL);
     let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = false; //Might need to change this
+    let only_direct_routes = true; //Might need to change this
 
     let quotes = match direction {
         true => {
@@ -109,8 +109,8 @@ pub async fn swap_ixs(
 
         instructions.push(tax_ix);
     }
-
-    Ok(instructions)
+    let luts = swap_instructions.address_lookup_table_addresses;
+    Ok((instructions, luts))
 }
 
 pub async fn shadow_swap(
@@ -136,7 +136,7 @@ pub async fn shadow_swap(
     }
 
     let slippage_bps = slippage_bps.unwrap_or(100);
-    let only_direct_routes = false; 
+    let only_direct_routes = false;
 
     let quotes = jup_ag::quote(
         mint,
@@ -164,7 +164,7 @@ pub async fn shadow_swap(
     instructions.extend(swap_instructions.setup_instructions);
     instructions.push(swap_instructions.swap_instruction);
 
-    let luts = swap_instructions.address_lookup_table_addresses; 
+    let luts = swap_instructions.address_lookup_table_addresses;
     Ok((instructions, luts))
 }
 

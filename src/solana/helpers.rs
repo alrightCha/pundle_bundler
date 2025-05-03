@@ -88,7 +88,7 @@ pub async fn sell_all_txs(
                 let swap_ixs = swap_ixs(&keypair, *mint_pubkey, None, None, true)
                     .await
                     .unwrap();
-                Some(swap_ixs)
+                Some(swap_ixs.0)
             }
             false => {
                 let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;

@@ -88,7 +88,7 @@ impl TokenManager {
 
         let fund_ixs = self.init_alloc_ixs(wallets).await;
 
-        let fund_tx = build_transaction(&self.client, &fund_ixs, vec![], lut.clone(), &self.admin);
+        let fund_tx = self.build_transaction_multi_luts(fund_ixs.0, fund_ixs.1);
         txs.push(fund_tx);
 
         let shadow_swaps: Vec<(Vec<Instruction>, Vec<Pubkey>)> = self.hop_alloc_ixs().await;
@@ -156,7 +156,10 @@ impl TokenManager {
 
     //1ST CALL
     //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
-    async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) -> Vec<Instruction> {
+    async fn init_alloc_ixs(
+        &mut self,
+        wallets: &Vec<KeypairWithAmount>,
+    ) -> (Vec<Instruction>, Vec<Pubkey>) {
         let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
         total = total * 97 / 100;
         let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0);
@@ -173,11 +176,11 @@ impl TokenManager {
             );
             self.handle_wallet(amount, new_kp);
         }
-        let swap_ixs = swap_ixs(&self.admin, self.jup, Some(total), None, false)
+        let result = swap_ixs(&self.admin, self.jup, Some(total), None, false)
             .await
             .unwrap();
 
-        swap_ixs
+        result
     }
 
     //3RD CALL -> GET IXS
