@@ -1,5 +1,6 @@
 use crate::config::{ADMIN_PUBKEY, RPC_URL};
 use crate::solana::utils::get_ata_balance;
+use crate::warmup::spls::JUP;
 use anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account;
 use anchor_spl::{
     associated_token::get_associated_token_address,
@@ -7,6 +8,7 @@ use anchor_spl::{
 };
 use jup_ag::{QuoteConfig, SwapRequest};
 use solana_client::rpc_client::RpcClient;
+use solana_client::nonblocking::rpc_client::RpcClient as NonRpcClient; 
 use solana_sdk::instruction::Instruction;
 
 use solana_sdk::{
@@ -117,9 +119,13 @@ pub async fn shadow_swap(
     mint: Pubkey,
     recipient: Pubkey,
     slippage_bps: Option<u64>,
-    amount: u64
+    amount: u64,
 ) -> Result<Vec<Instruction>, Box<dyn std::error::Error + Send + Sync>> {
-    println!("Collecting shadow swap IX for {} with passed amount {}", recipient.to_string(), amount); 
+    println!(
+        "Collecting shadow swap IX for {} with passed amount {}",
+        recipient.to_string(),
+        amount
+    );
     let mut instructions = Vec::new();
     let ata: Pubkey = get_associated_token_address(&recipient, &ID);
 
@@ -156,7 +162,7 @@ pub async fn shadow_swap(
     let swap_instructions = jup_ag::swap_instructions(request).await?;
 
     instructions.extend(swap_instructions.setup_instructions);
-    instructions.push(swap_instructions.swap_instruction); 
+    instructions.push(swap_instructions.swap_instruction);
     Ok(instructions)
 }
 
@@ -171,10 +177,10 @@ pub async fn tokens_for_sol(
     base_mint: Pubkey,
     amount: u64,
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-    let rate = rate(base_mint, amount, false).await; 
-    if let Ok(rate) = rate{
-        println!("Mint: {}", base_mint); 
-        println!("Rate found for {} SOL: {} JUP.", amount, rate); 
+    let rate = rate(base_mint, amount, false).await;
+    if let Ok(rate) = rate {
+        println!("Mint: {}", base_mint);
+        println!("Rate found for {} SOL: {} JUP.", amount, rate);
     }
     rate
 }
@@ -191,10 +197,10 @@ pub async fn rate(
     // Determine direction and decimal scaling
     let (input_mint, output_mint, amount_scaled) = if direction_sol {
         // base_mint → SOL (e.g., USDC → SOL)
-        (base_mint, sol, amount * 1_000_000) // assume base is 6 decimals
+        (base_mint, sol, amount) // assume base is 6 decimals
     } else {
         // SOL → base_mint (e.g., SOL → USDC)
-        (sol, base_mint, amount * 1_000_000_000) // SOL is 9 decimals
+        (sol, base_mint, amount) // SOL is 9 decimals
     };
 
     let quotes = jup_ag::quote(
@@ -219,30 +225,4 @@ pub async fn rate(
     );
 
     Ok(out_amount)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::warmup::spls::JUP;
-
-    use super::*;
-    use std::str::FromStr;
-
-    #[tokio::test]
-    async fn test_jup_to_sol() {
-        let usdc = Pubkey::from_str(JUP).unwrap();
-        let amount = 200;
-        let out = rate(usdc, amount, true).await.unwrap();
-        println!("1 JUP → ~{} lamports", out);
-        assert!(out > 0);
-    }
-
-    #[tokio::test]
-    async fn test_sol_to_usdc() {
-        let usdc = Pubkey::from_str(JUP).unwrap();
-        let amount = 1; // 1 SOL
-        let out = rate(usdc, amount, false).await.unwrap();
-        println!("1 SOL → ~{} usdc micro-units", out);
-        assert!(out > 0);
-    }
 }

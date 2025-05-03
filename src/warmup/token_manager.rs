@@ -149,8 +149,8 @@ impl TokenManager {
 
         let mut bundle_txs: Vec<VersionedTransaction> = Vec::new();
         let mut tx_ixs: Vec<Instruction> = Vec::new();
-
         tx_ixs.push(fee_ix.clone());
+        
         let mut pushed = false; 
         for ix in self.shadow_ixs.iter() {
             let mut maybe_ixs: Vec<Instruction> = tx_ixs.clone();
