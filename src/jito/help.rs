@@ -1,7 +1,6 @@
 use super::jito::JitoBundle;
 use crate::config::{
-    BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_BUYERS_FIRST_BUNDLE,
-    MAX_RETRIES, RPC_URL,
+    BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_BUYERS_FIRST_BUNDLE, MAX_RETRIES, RPC_URL,
 };
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
@@ -65,7 +64,7 @@ impl BundleTransactions {
         jito_fee: u64,
     ) -> Self {
         let client: RpcClient = RpcClient::new(RPC_URL);
-        
+
         let jito: JitoBundle = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
         let dev: Keypair = dev_keypair.insecure_clone();
@@ -143,22 +142,26 @@ impl BundleTransactions {
         let mut first_tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
         first_tx_ixs.extend(dev_ix);
 
+        if self.with_delay {
+            let dev_jito_tip = self
+                .jito
+                .get_tip_ix(self.dev_keypair.pubkey(), Some(self.jito_tip_account))
+                .await
+                .unwrap();
+            first_tx_ixs.push(dev_jito_tip);
+        }
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
 
         transactions.push(first_tx);
 
-        //Break early and return first tx if with delay 
+        //Break early and return first tx if with delay
         if self.with_delay {
-            return transactions
+            return transactions;
         }
 
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
 
-        for (index, buyer) in self
-            .keypairs_to_treat
-            .iter()
-            .enumerate()
-        {
+        for (index, buyer) in self.keypairs_to_treat.iter().enumerate() {
             println!(
                 "INDEX: {:?} FOR PUBKEY: {:?}",
                 index,
@@ -173,16 +176,14 @@ impl BundleTransactions {
 
             tx_ixs.extend(buy_ixs);
 
-            if index == MAX_BUYERS_FIRST_BUNDLE
-                || index == self.keypairs_to_treat.len() - 1
-            {
+            if index == MAX_BUYERS_FIRST_BUNDLE || index == self.keypairs_to_treat.len() - 1 {
                 // last item or 23rd item of list
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
                 transactions.push(new_tx);
-                tx_ixs = Vec::new(); 
-                break; 
+                tx_ixs = Vec::new();
+                break;
             }
 
             // Every 5 buyers, create new transaction
@@ -219,12 +220,22 @@ impl BundleTransactions {
         for (index, keypair) in self
             .keypairs_to_treat
             .iter()
-            .skip(if self.with_delay { 0 } else { MAX_BUYERS_FIRST_BUNDLE })
+            .skip(if self.with_delay {
+                0
+            } else {
+                MAX_BUYERS_FIRST_BUNDLE
+            })
             .enumerate()
         {
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, keypair.amount - BUFFER_AMOUNT, Some(800), true)
+                .buy_ixs(
+                    &mint_pubkey,
+                    &keypair.keypair,
+                    keypair.amount - BUFFER_AMOUNT,
+                    Some(800),
+                    true,
+                )
                 .await
                 .unwrap();
 
@@ -239,7 +250,10 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
-            else if (!self.with_delay && index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
+            else if (!self.with_delay
+                && index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - 1)
+                || (self.with_delay && index == self.keypairs_to_treat.len() - 1)
+            {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
