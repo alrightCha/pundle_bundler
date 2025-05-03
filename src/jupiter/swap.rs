@@ -1,13 +1,11 @@
 use crate::config::{ADMIN_PUBKEY, RPC_URL};
 use crate::solana::utils::get_ata_balance;
-use crate::warmup::spls::JUP;
 use anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account;
 use anchor_spl::{
     associated_token::get_associated_token_address,
     token::spl_token::{native_mint::ID, ID as SplID},
 };
 use jup_ag::{QuoteConfig, SwapRequest};
-use solana_client::nonblocking::rpc_client::RpcClient as NonRpcClient;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::instruction::Instruction;
 
