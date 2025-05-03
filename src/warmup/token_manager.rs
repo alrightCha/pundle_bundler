@@ -19,6 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
+use tokio::time::Sleep;
 use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
@@ -112,6 +113,7 @@ impl TokenManager {
             let max_retries = 3;
             let mut attempts = 0;
 
+            sleep(Duration::from_secs(5)); 
             loop {
                 let res = jito
                     .process_bundle(txs.clone(), Pubkey::default(), None)
