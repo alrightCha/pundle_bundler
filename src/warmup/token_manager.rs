@@ -151,7 +151,7 @@ impl TokenManager {
         let mut tx_ixs: Vec<Instruction> = Vec::new();
         tx_ixs.push(fee_ix.clone());
 
-        let mut pushed = false; 
+        let mut pushed = false;
         for ix in self.shadow_ixs.iter() {
             let mut maybe_ixs: Vec<Instruction> = tx_ixs.clone();
             maybe_ixs.push(ix.clone());
@@ -160,8 +160,8 @@ impl TokenManager {
             let maybe_tx =
                 build_transaction(&self.client, &maybe_ixs, vec![], lut.clone(), &self.admin);
             let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
-            println!("Maybe instruction count: {:?}", maybe_ixs.len()); 
-            println!("Maybe size is: {:?}", size); 
+            println!("Maybe instruction count: {:?}", maybe_ixs.len());
+            println!("Maybe size is: {:?}", size);
             if size >= 1232 {
                 println!("#2");
                 self.print_signers(&tx_ixs);
@@ -170,9 +170,9 @@ impl TokenManager {
                 tx_ixs = vec![fee_ix.clone(), ix.clone()];
                 if bundle_txs.len() % 5 == 4 && !pushed {
                     tx_ixs.push(tip_ix.clone());
-                    pushed = true; 
-                }else{
-                    pushed = false; 
+                    pushed = true;
+                } else {
+                    pushed = false;
                 }
             } else {
                 tx_ixs.push(ix.clone());
@@ -192,9 +192,16 @@ impl TokenManager {
 
         for chunk in chunks {
             let chunk_vec = chunk.to_vec();
-            let _ = jito
-                .process_bundle(chunk_vec, Pubkey::default(), None)
+            let res = jito
+                .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
                 .await;
+            if let Err(res) = res {
+                println!("Received error {:?} for request, resubmitting bundle...", res);
+                sleep(Duration::from_secs(2));
+                let _ = jito
+                    .process_bundle(chunk_vec, Pubkey::default(), None)
+                    .await;
+            }
         }
 
         //If final funding balance is higher than 0, we have successfully funded all hop keypairs
