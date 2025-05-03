@@ -1,6 +1,6 @@
 use super::jito::JitoBundle;
 use crate::config::{
-    BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_BUYERS_FIRST_BUNDLE, MAX_BUYERS_FIRST_TX,
+    BUFFER_AMOUNT, FEE_AMOUNT, JITO_TIP_AMOUNT, MAX_BUYERS_FIRST_BUNDLE,
     MAX_RETRIES, RPC_URL,
 };
 use crate::params::KeypairWithAmount;
@@ -143,36 +143,6 @@ impl BundleTransactions {
         let mut first_tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone(), mint_ix];
         first_tx_ixs.extend(dev_ix);
 
-        let first_tx_chunk = if self.keypairs_to_treat.len() < MAX_BUYERS_FIRST_TX {
-            &self.keypairs_to_treat[..]
-        } else {
-            &self.keypairs_to_treat[..3]
-        };
-
-        if !self.with_delay {
-            for buyer in first_tx_chunk {
-                let buy_ixs = self
-                    .pumpfun_client
-                    .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
-                    .await
-                    .unwrap();
-
-                first_tx_ixs.extend(buy_ixs);
-            }
-        }
-
-        //If we only have 3 buyers or if the mode is with delay, add jito tip to first buy
-        if self.keypairs_to_treat.len() <= MAX_BUYERS_FIRST_TX || self.with_delay {
-            println!("Adding tip here");
-            // last item or 23rd item of list
-            let dev_jito_tip = self
-                .jito
-                .get_tip_ix(self.dev_keypair.pubkey(), Some(self.jito_tip_account))
-                .await
-                .unwrap();
-            first_tx_ixs.push(dev_jito_tip);
-        }
-
         let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
 
         transactions.push(first_tx);
@@ -187,7 +157,6 @@ impl BundleTransactions {
         for (index, buyer) in self
             .keypairs_to_treat
             .iter()
-            .skip(MAX_BUYERS_FIRST_TX)
             .enumerate()
         {
             println!(
@@ -205,7 +174,7 @@ impl BundleTransactions {
             tx_ixs.extend(buy_ixs);
 
             if index == MAX_BUYERS_FIRST_BUNDLE
-                || index == self.keypairs_to_treat.len() - 1 - MAX_BUYERS_FIRST_TX
+                || index == self.keypairs_to_treat.len() - 1
             {
                 // last item or 23rd item of list
                 println!("Adding tip here");
@@ -250,7 +219,7 @@ impl BundleTransactions {
         for (index, keypair) in self
             .keypairs_to_treat
             .iter()
-            .skip(if self.with_delay { 0 } else { MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX })
+            .skip(if self.with_delay { 0 } else { MAX_BUYERS_FIRST_BUNDLE })
             .enumerate()
         {
             let buy_ixs: Vec<Instruction> = self
@@ -270,7 +239,7 @@ impl BundleTransactions {
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
-            else if (!self.with_delay && index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - MAX_BUYERS_FIRST_TX - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
+            else if (!self.with_delay && index == self.keypairs_to_treat.len() - MAX_BUYERS_FIRST_BUNDLE - 1) || (self.with_delay && index == self.keypairs_to_treat.len() - 1) {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
                 let new_tx = self.get_tx(&tx_ixs, false);
@@ -287,7 +256,7 @@ impl BundleTransactions {
     }
 
     pub fn has_delayed_bundle(&mut self) -> bool {
-        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + MAX_BUYERS_FIRST_TX + 1 || self.with_delay
+        self.keypairs_to_treat.len() >= MAX_BUYERS_FIRST_BUNDLE + 1 || self.with_delay
         // In total we can get 23 buys + dev buy for first bundle
     }
 
