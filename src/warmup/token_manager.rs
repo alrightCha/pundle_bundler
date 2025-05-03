@@ -19,7 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
  * generate new hop keypair for each buying keypair
@@ -108,12 +108,38 @@ impl TokenManager {
         }
 
         let chunks: Vec<_> = txs.chunks(5).collect();
-
+        let max_retries = 3;
         for chunk in chunks {
             let chunk_vec = chunk.to_vec();
-            let _ = jito
+
+            let mut attempts = 0;
+            let res = jito
                 .process_bundle(chunk_vec.clone(), Pubkey::default(), None)
                 .await;
+            match res {
+                Ok(_) => {
+                    println!("✅ Bundle submitted successfully");
+                    break;
+                }
+                Err(err) => {
+                    // Check for "Network congested" rate limit error
+                    let err_str = err.to_string();
+                    if err_str.contains("Network congested") || err_str.contains("429") {
+                        attempts += 1;
+                        if attempts > max_retries {
+                            eprintln!("❌ Max retries reached for bundle: {:?}", err);
+                            break;
+                        }
+                        let wait_time = Duration::from_millis(500 * attempts as u64);
+                        println!("⚠️ Rate limited. Retrying in {:?}...", wait_time);
+                        sleep(wait_time);
+                    } else {
+                        // Some other error — log and skip
+                        eprintln!("❌ Unexpected error: {:?}", err);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -131,11 +157,11 @@ impl TokenManager {
     //1ST CALL
     //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
     async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) -> Vec<Instruction> {
-        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum(); 
-        total = total * 97 / 100; 
-        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0); 
+        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
+        total = total * 97 / 100;
+        let total_tokens = tokens_for_sol(self.jup, total.clone()).await.unwrap_or(0);
         for wallet in wallets.iter() {
-            let amount = wallet.amount * total_tokens / total; 
+            let amount = wallet.amount * total_tokens / total;
             let new_kp = Keypair::new();
             store_secret("hops.txt", &new_kp);
             self.hop_to_pubkey
@@ -159,16 +185,9 @@ impl TokenManager {
     async fn hop_alloc_ixs(&mut self) -> Vec<(Vec<Instruction>, Vec<Pubkey>)> {
         let mut discrete_swaps_txs: Vec<(Vec<Instruction>, Vec<Pubkey>)> = Vec::new();
         for (pubkey, amount) in self.wallet_to_amount.iter() {
-            let swap_ixs = shadow_swap(
-                &self.client,
-                &self.admin,
-                self.jup,
-                *pubkey,
-                None,
-                *amount,
-            )
-            .await
-            .unwrap();
+            let swap_ixs = shadow_swap(&self.client, &self.admin, self.jup, *pubkey, None, *amount)
+                .await
+                .unwrap();
             discrete_swaps_txs.push(swap_ixs);
             self.last_funding = pubkey.clone();
         }
@@ -193,8 +212,14 @@ impl TokenManager {
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
 
         let ata: Pubkey = get_associated_token_address(&signer.pubkey(), &ID);
-        let unwrap_wsol =
-            close_account(&SplID, &ata, to, &signer.pubkey(), &[&signer.pubkey(), &self.admin.pubkey()]).unwrap();
+        let unwrap_wsol = close_account(
+            &SplID,
+            &ata,
+            to,
+            &signer.pubkey(),
+            &[&signer.pubkey(), &self.admin.pubkey()],
+        )
+        .unwrap();
 
         let instructions: Vec<Instruction> = vec![fee_ix, unwrap_wsol];
         let blockhash = self.client.get_latest_blockhash().unwrap();
