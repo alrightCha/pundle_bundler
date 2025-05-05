@@ -162,6 +162,7 @@ impl TokenManager {
             if let Some(buying_wallet) = buying_wallet {
                 let hop_keypair = Keypair::new();
                 store_secret("hop_keypairs.txt", &hop_keypair);
+                println!("New keypair: {:?}", hop_keypair.secret()); 
                 //Insert hop wallet to actual recipient wallet that is stored in DB for buys
                 self.hop_to_pubkey
                     .insert(hop_keypair.pubkey(), buying_wallet.keypair.pubkey());
