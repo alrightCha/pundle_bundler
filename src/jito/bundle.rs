@@ -85,12 +85,7 @@ pub async fn process_bundle(
 
     //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
     let mut shadow_manager = TokenManager::new();
-
     shadow_manager.shadow_bundle(&all_transfers).await;
-
-    println!("Completed bundle submissions");
-    //> Transfer sols from hop keypairs to buying keypairs
-    shadow_manager.final_distribute().await;
 
     let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
         .await

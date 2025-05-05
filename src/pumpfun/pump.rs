@@ -15,11 +15,9 @@ use anchor_spl::associated_token::{
     spl_associated_token_account::instruction::create_associated_token_account,
 };
 use pumpfun_cpi::instruction::{Buy, Create, Sell};
-
 use crate::config::RPC_URL;
 use crate::params::PoolInformation;
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
-use borsh::BorshDeserialize;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};

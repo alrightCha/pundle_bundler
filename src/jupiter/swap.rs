@@ -190,17 +190,16 @@ pub async fn rate(
     amount: u64,
     direction_sol: bool,
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-    let sol = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
     let only_direct_routes = false;
     let slippage_bps = 100;
 
     // Determine direction and decimal scaling
     let (input_mint, output_mint, amount_scaled) = if direction_sol {
         // base_mint → SOL (e.g., USDC → SOL)
-        (base_mint, sol, amount) // assume base is 6 decimals
+        (base_mint, ID, amount) // assume base is 6 decimals
     } else {
         // SOL → base_mint (e.g., SOL → USDC)
-        (sol, base_mint, amount) // SOL is 9 decimals
+        (ID, base_mint, amount) // SOL is 9 decimals
     };
 
     let quotes = jup_ag::quote(
@@ -225,4 +224,24 @@ pub async fn rate(
     );
 
     Ok(out_amount)
+}
+
+pub async fn pumpswap_pool_id(mint: &Pubkey, amount: u64, buy: bool) -> Option<(Pubkey, u64)> {
+    let quotes = jup_ag::quote(
+         if buy { ID } else { mint.clone() },
+        if buy { mint.clone() } else { ID },
+        amount,
+        QuoteConfig {
+            only_direct_routes: true,
+            slippage_bps: Some(100),
+            dexes: Some(vec!["Pump.fun Amm".to_string()]),
+            ..QuoteConfig::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let pool_id = quotes.route_plan[0].swap_info.amm_key;
+    let amount_out = quotes.out_amount;
+    Some((pool_id, amount_out))
 }

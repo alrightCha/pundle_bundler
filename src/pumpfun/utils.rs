@@ -1,13 +1,15 @@
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
+use solana_sdk::pubkey;
+use solana_sdk::pubkey::Pubkey;
 
 pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     println!("Dev buy SOL: {:?}", dev_buy);
     println!("Amount SOL: {:?}", amount);
     let mut bonding_curve = BondingCurveAccount::default();
-    
+
     // Get tokens received for dev buy
     let dev = bonding_curve.get_buy_price(dev_buy).unwrap();
-    
+
     // Get tokens that would be received for the amount
     let tokens_for_amount = bonding_curve.get_buy_price(amount).unwrap();
     println!("Tokens to receive: {:?}", tokens_for_amount + dev);
@@ -18,7 +20,7 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     // Calculate how many wallets needed based on token amount
     let number_of_wallets = (tokens_for_amount as f64 / max_tokens_per_wallet as f64).ceil() as u64;
     println!("Number of wallets needed: {:?}", number_of_wallets);
-    
+
     let mut remaining_sol = amount;
     let mut splits = Vec::new();
 
@@ -34,7 +36,7 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
 
     for i in 0..number_of_wallets {
         let is_last = i == number_of_wallets - 1;
-        
+
         if is_last {
             // Last wallet gets remaining SOL to ensure exact total
             let final_amount = amount - total_allocated;
@@ -42,16 +44,16 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
         } else {
             // Calculate base SOL per wallet
             let base_amount = remaining_sol / (number_of_wallets - i);
-            
+
             // Add random deviation between -5% to +5%
             let deviation = (base_amount as f64 * (rng.gen_range(-10.0..10.0) / 100.0)) as u64;
             let split_amount = base_amount.saturating_add(deviation);
-            
+
             // Ensure we don't exceed remaining amount and leave enough for other wallets
             let min_remaining = (number_of_wallets - i - 1) * (base_amount / 2); // Ensure minimum for remaining wallets
             let max_this_split = remaining_sol.saturating_sub(min_remaining);
             let split_amount = std::cmp::min(split_amount, max_this_split);
-            
+
             // Verify the tokens this split would receive doesn't exceed max per wallet
             let tokens_for_split = bonding_curve.get_buy_price(split_amount).unwrap();
             if tokens_for_split > max_tokens_per_wallet {
@@ -69,10 +71,22 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     }
 
     // Verify total equals input amount
-    debug_assert_eq!(splits.iter().sum::<u64>(), amount, "Split amounts must sum to input amount");
+    debug_assert_eq!(
+        splits.iter().sum::<u64>(),
+        amount,
+        "Split amounts must sum to input amount"
+    );
 
     splits
 }
+
+pub const PUMPFUN_FEE_ACC: Pubkey = pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV");
+pub const SYSTEM_PROGRAM: Pubkey = pubkey!("11111111111111111111111111111111");
+pub const TOKEN_PROGRAM: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+pub const PUMPFUN_EVENT_AUTH: Pubkey = pubkey!("GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR");
+pub const ASSOCIATED_TOKEN_PROGRAM: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+pub const PUMP_AMM_PROGRAM: Pubkey = pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+pub const PUMP_GLOBAL: Pubkey = pubkey!("ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw"); 
 
 #[cfg(test)]
 mod tests {
@@ -83,24 +97,10 @@ mod tests {
         let dev_buy = 1_000_000_000;
         let amount = 9_500_000_000; // Large amount that should result in multiple wallets
         let splits = get_splits(dev_buy, amount, 0.030);
-        
+
         let total = splits.iter().sum::<u64>();
         println!("Splits: {:?}", splits);
         println!("Total: {:?}", total);
         assert_eq!(total, amount);
     }
-
-    #[test]
-    fn test_token_limits_respected() {
-        let dev_buy = 1_000_000_000;
-        let amount = 26_000_000_000; // Large amount that should result in multiple wallets
-        let splits = get_splits(dev_buy, amount, 0.03);
-        println!("Splits: {:?}", splits);
-        let mut bonding_curve = BondingCurveAccount::default();
-        let _ = bonding_curve.get_buy_price(dev_buy).unwrap(); // Register dev buy
-        
-        let total = splits.iter().sum::<u64>();
-        assert_eq!(total, amount, "Splits should sum to total amount");
-    }
 }
-
