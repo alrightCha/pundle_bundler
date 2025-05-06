@@ -172,7 +172,7 @@ pub async fn process_bundle(
                     }
                     break;
                 } else {
-                    sleep(Duration::from_secs(1));
+                    sleep(Duration::from_millis(100));
                 }
             }
         });
