@@ -71,6 +71,7 @@ pub async fn handle_post_bundle(
     let mint_keypair_str = payload.vanity; 
 
     let mint = Keypair::from_base58_string(&mint_keypair_str); 
+    println!("Mint address: {:?}", mint.pubkey().to_string()); 
     let dev_keypair = create_keypair(&requester_pubkey, &mint.pubkey().to_string()).unwrap();
 
     let token_metadata = Create {
@@ -135,6 +136,8 @@ pub async fn handle_post_bundle(
     let jito_fee = payload.jito_tip;
     let with_delay = payload.with_delay;
 
+    println!("Passing mint to process bundle fn: {:?}", mint.pubkey().to_string()); 
+    
     // Spawn background processing of bundle in a separate task
     spawn(async move {
         match process_bundle(
