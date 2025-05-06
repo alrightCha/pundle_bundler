@@ -7,6 +7,7 @@ use solana_sdk::signature::Keypair;
 #[serde(rename_all = "camelCase")]
 pub struct PostBundleRequest {
     pub requester_pubkey: String,
+    pub vanity: String, 
     pub name: String,
     pub symbol: String,
     pub uri: String,

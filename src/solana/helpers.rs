@@ -2,8 +2,7 @@ use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
 use crate::jito::jito::JitoBundle;
 use crate::jupiter::swap::{sol_for_tokens, swap_ixs};
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::{build_transaction, get_ata_balance, load_keypair, test_transactions};
-use dotenv::dotenv;
+use crate::solana::utils::{build_transaction, test_transactions};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::{
@@ -16,9 +15,10 @@ use solana_sdk::{
 };
 
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
+
+use super::utils::get_admin_keypair;
 
 pub async fn sell_all_txs(
     admin_keypair: Keypair,
@@ -252,9 +252,7 @@ pub fn get_tx_signers(ixs: &Vec<Instruction>, all_keypairs: &Vec<Keypair>) -> Ve
 }
 
 pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
-    dotenv().ok();
-    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
-    let admin_kp = load_keypair(&admin_keypair_path).unwrap();
+    let admin_kp = get_admin_keypair();
     let payer: Arc<Keypair> = Arc::new(admin_kp);
 
     let pumpfun_client = PumpFun::new(payer);

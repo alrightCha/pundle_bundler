@@ -31,7 +31,6 @@ use crate::params::{KeypairWithAmount, PostBundleRequest, PostBundleResponse, Wa
 use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL, TOKEN_AMOUNT_MULTIPLIER};
 use crate::jito::bundle::process_bundle;
 use crate::jito::jito::JitoBundle;
-use crate::solana::grind::grind;
 use crate::solana::helpers::{get_sol_amount, sell_all_txs};
 use crate::solana::utils::{
     create_keypair, get_admin_keypair, get_keypairs_for_pubkey, load_keypair,
@@ -69,10 +68,10 @@ pub async fn handle_post_bundle(
     //Step 0: Initialize variables
 
     let requester_pubkey = payload.requester_pubkey.clone();
-    //Creating mint keypair ending in pump
-    let mint_pubkey = grind(requester_pubkey.clone()).unwrap();
+    let mint_keypair_str = payload.vanity; 
 
-    let dev_keypair = create_keypair(&requester_pubkey, &mint_pubkey).unwrap();
+    let mint = Keypair::from_base58_string(&mint_keypair_str); 
+    let dev_keypair = create_keypair(&requester_pubkey, &mint.pubkey().to_string()).unwrap();
 
     let token_metadata = Create {
         _name: payload.name,
@@ -80,12 +79,6 @@ pub async fn handle_post_bundle(
         _uri: payload.uri,
         _creator: dev_keypair.pubkey(),
     };
-
-    let mint = load_keypair(&format!(
-        "accounts/{}/{}/{}.json",
-        requester_pubkey, mint_pubkey, mint_pubkey
-    ))
-    .unwrap();
 
     //Preparing keypairs and respective amounts in sol
     let dev_keypair_with_amount = KeypairWithAmount {
@@ -107,7 +100,7 @@ pub async fn handle_post_bundle(
     let keypairs_with_amount: Vec<KeypairWithAmount> = wallets_buy_amount
         .iter()
         .map(|amount| KeypairWithAmount {
-            keypair: create_keypair(&requester_pubkey, &mint_pubkey).unwrap(),
+            keypair: create_keypair(&requester_pubkey, &mint.pubkey().to_string()).unwrap(),
             amount: *amount,
         })
         .collect();
@@ -156,13 +149,13 @@ pub async fn handle_post_bundle(
         .await
         {
             Ok(lut) => {
-                println!("Inserting LUT for mint: {:?}", mint_pubkey);
+                println!("Inserting LUT for mint: {:?}", mint.pubkey().to_string());
                 println!("LUT: {:?}", lut);
                 let mut map = pubkey_to_lut.write().await;
-                map.insert(mint_pubkey, lut);
+                map.insert(mint.pubkey().to_string(), lut);
             }
             Err(e) => {
-                eprintln!("Error processing bundle for mint {}: {}", mint_pubkey, e);
+                eprintln!("Error processing bundle for mint {}: {}", mint.pubkey().to_string(), e);
             }
         }
     });

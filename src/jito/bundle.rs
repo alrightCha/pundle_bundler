@@ -1,4 +1,3 @@
-use dotenv::dotenv;
 use reqwest::Client as HttpClient;
 
 use solana_sdk::{
@@ -9,17 +8,20 @@ use solana_sdk::{
 };
 
 use super::help::BundleTransactions;
-use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL};
 use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::utils::validate_delayed_txs;
-use crate::solana::{lut::create_lut, utils::load_keypair};
+use crate::solana::lut::create_lut;
 use crate::warmup::token_manager::TokenManager;
+use crate::{
+    config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
+    solana::utils::get_admin_keypair,
+};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::address_lookup_table::state::AddressLookupTable;
-use std::{env, sync::Arc, thread::sleep};
+use std::{sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
 pub async fn process_bundle(
@@ -31,9 +33,7 @@ pub async fn process_bundle(
     jito_fee: u64,
     with_delay: bool,
 ) -> Result<Pubkey, Box<dyn std::error::Error + Send + Sync>> {
-    dotenv().ok();
-    let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
-    let admin_kp = load_keypair(&admin_keypair_path).unwrap();
+    let admin_kp = get_admin_keypair();
 
     let client = RpcClient::new(RPC_URL);
 
@@ -121,7 +121,7 @@ pub async fn process_bundle(
 
     if txs_builder.has_delayed_bundle() {
         let mint_pubkey = mint.pubkey();
-        let admin_kp = load_keypair(&admin_keypair_path).unwrap();
+        let admin_kp = get_admin_keypair();
         let payer: Arc<Keypair> = Arc::new(admin_kp);
         let pumpfun_client = PumpFun::new(payer);
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);

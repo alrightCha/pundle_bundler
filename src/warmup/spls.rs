@@ -16,6 +16,25 @@ const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; //11
 const CBBTC: &str = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij"; //12
 const UFD: &str = "eL5fUxj2J4CiQsmW85k5FG9DvuQjjUoBHoQBi2Kpump"; //13
 const RETARDIO: &str = "6ogzHhzdrQr9Pgv6hZ2MNze7UrzBMAFyBBWUYp1Fhitx"; //14
+const VITAFIN: &str = "83mCRQJzvKMeQd9wJbZDUCTPgRbZMDoPdMSx5Sf1pump"; //15
+const URMOM: &str = "9j6twpYWrV1ueJok76D9YK8wJTVoG9Zy8spC7wnTpump"; //16
+const CHILLHOUSE: &str = "GkyPYa7NnCFbduLknCfBfP7p8564X1VZhwZYJ6CZpump"; //17
+const AURA: &str = "4rwPNRSFgcS7EGphFdX7VwXuhjZGxph7gYyb7Zp2pump"; //18
+const LILPUF: &str = "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP"; //19
+const JOBCOIN: &str = "AyrQpt5xsVYiN4BqgZdd2tZJAWswT9yLUZmP1jKqpump"; //20
+const PHARMA: &str = "HtrvP4fG9KiFqFeu4f32RuZiwG3nmYwPkPZ61nAbpump"; //21
+const ANIME: &str = "3pA668WX5vNjQMw2KdHJ8RpZceG6gEfXWtRvGChjbSnz"; //22
+const SHRIMP: &str = "BMnMaiMu5B29o3eMDena8cxwL9R4CDwotxQMG2Tspump"; //23
+const CINO: &str = "BUUB7DpQT1mcTrs55oXawgEbxm5khAozsbmyhMdRpump"; //24
+const JUP: &str = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"; //25
+const OX: &str = "3E2z4KX7y457xJqK9RQeJhA29oPdoUvAAD3Ea3zQyuG3"; //26
+const WIZARD: &str = "8oosbx7jJrZxm5m4ThKhBpvwwG4QpoAe6i4GiG19pump"; //27
+const SUGAR: &str = "5iVmFCCwJTuuw7p4FrxYoZ1bUNdjg14j7uv5hMsMpump"; //28
+const WOKE: &str = "GT564KpGybkXFE43D8eySwNuy2zdV6hjXsiHREwSpump"; //29
+const FRITZ: &str = "4Ge6ejgv7KJHqDgML3w2S48rntuZQ4KZ9WGEVeibpump"; //30
+const DELI: &str = "8BdXCskcD98NUk9Ciwx6eZqXUD9zB891sSu3rYBSpump"; //31
+const WALE: &str = "AAE7JS7EAHkQzRKn1Cmt7TP5cQR39Df8D3zxWmNjpump"; //32
+const CFX: &str = "RhFVq1Zt81VvcoSEMSyCGZZv5SwBdA8MV7w4HEMpump"; //33
 
 pub fn init_mints() -> Vec<Pubkey> {
     let usdc: Pubkey = Pubkey::from_str(USDC).unwrap();
@@ -32,9 +51,29 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cbbtc: Pubkey = Pubkey::from_str(CBBTC).unwrap();
     let ufd: Pubkey = Pubkey::from_str(UFD).unwrap();
     let retardio: Pubkey = Pubkey::from_str(RETARDIO).unwrap();
+    let vitafin: Pubkey = Pubkey::from_str(VITAFIN).unwrap();
+    let urmom: Pubkey = Pubkey::from_str(URMOM).unwrap();
+    let chill: Pubkey = Pubkey::from_str(CHILLHOUSE).unwrap();
+    let aura: Pubkey = Pubkey::from_str(AURA).unwrap();
+    let lilpuf: Pubkey = Pubkey::from_str(LILPUF).unwrap();
+    let jobcoin: Pubkey = Pubkey::from_str(JOBCOIN).unwrap();
+    let pharma: Pubkey = Pubkey::from_str(PHARMA).unwrap();
+    let anime: Pubkey = Pubkey::from_str(ANIME).unwrap();
+    let shrimp: Pubkey = Pubkey::from_str(SHRIMP).unwrap();
+    let cino: Pubkey = Pubkey::from_str(CINO).unwrap();
+    let jup: Pubkey = Pubkey::from_str(JUP).unwrap();
+    let ox: Pubkey = Pubkey::from_str(OX).unwrap();
+    let wizard: Pubkey = Pubkey::from_str(WIZARD).unwrap();
+    let sugar: Pubkey = Pubkey::from_str(SUGAR).unwrap();
+    let woke: Pubkey = Pubkey::from_str(WOKE).unwrap();
+    let fritz: Pubkey = Pubkey::from_str(FRITZ).unwrap();
+    let deli: Pubkey = Pubkey::from_str(DELI).unwrap();
+    let wale: Pubkey = Pubkey::from_str(WALE).unwrap();
+    let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
         usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, pudgy, cbbtc, ufd,
-        retardio,
+        retardio, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino, jup,
+        ox, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]
 }
