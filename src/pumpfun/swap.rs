@@ -96,7 +96,7 @@ impl PumpSwap {
             let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &mint); // mint ata for admin
 
             if let Err(err) = self.client.get_account(&ata) {
-                println!("Received error when trying to find ata for mint on admin keypair: {:?}", err); 
+                println!("Received error when trying to find ata for mint on admin keypair: {:?}", err);
                 let create_ata_ix = create_associated_token_account(
                     &self.admin.pubkey(),
                     &self.admin.pubkey(),

@@ -8,4 +8,3 @@ pub const BUFFER_AMOUNT: u64 = 2_000_000;
 pub const TOKEN_AMOUNT_MULTIPLIER: u64 = 1_000_000;
 pub const PORT: u16 = 3000;
 pub const MAX_BUYERS_FIRST_BUNDLE: usize = 19; 
-pub const MAX_BUYERS_FIRST_TX: usize = 3; 
