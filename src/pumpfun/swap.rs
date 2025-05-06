@@ -49,10 +49,18 @@ impl PumpSwap {
     }
 
     pub fn wrap_admin_sol(&self, total_amount: u64) -> Vec<Instruction> {
-        let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &ID); // mint ata for admin
-        let transfer_ix = system_instruction::transfer(&self.admin.pubkey(), &ata, total_amount); 
-        let sync_ix = sync_native(&SplID, &ata).unwrap(); 
-        vec![transfer_ix, sync_ix]
+        let mut ixs: Vec<Instruction> = Vec::new(); 
+        let ata = get_associated_token_address(&self.admin.pubkey(), &ID); 
+        if self.client.get_account(&ata).is_err() {
+            let create_ata_ix =
+                create_associated_token_account(&self.admin.pubkey(), &self.admin.pubkey(), &ID, &SplID);
+            ixs.push(create_ata_ix);
+        }
+        let transfer_ix = system_instruction::transfer(&self.admin.pubkey(), &ata, total_amount);
+        let sync_ix = sync_native(&SplID, &ata).unwrap();
+        ixs.push(transfer_ix); 
+        ixs.push(sync_ix); 
+        ixs 
     }
 
     pub async fn buy_ixs(
