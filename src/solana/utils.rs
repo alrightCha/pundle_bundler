@@ -25,6 +25,7 @@ use std::path::Path;
 use std::result::Result::Ok;
 
 pub fn get_admin_keypair() -> Keypair {
+    //Load admin keypair
     let admin_keypair_path = env::var("ADMIN_KEYPAIR").unwrap();
     load_keypair(&admin_keypair_path).unwrap()
 }
@@ -121,7 +122,7 @@ pub fn build_transaction(
         signers.push(payer);
     }
 
-    println!("Signers count: {}", signers.len());
+    println!("Signers count: {}", signers.len()); 
     // Create the transaction with all keypairs as signers
     let tx = VersionedTransaction::try_new(versioned_message, &signers).unwrap();
     tx

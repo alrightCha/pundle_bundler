@@ -7,6 +7,8 @@ use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
+
+use anchor_spl::token::spl_token::instruction::sync_native;
 use anchor_spl::token::spl_token::{native_mint::ID, ID as SplID};
 use pumpswap_cpi::{
     instruction::{Buy, Sell},
@@ -24,7 +26,6 @@ use solana_sdk::{
 use super::utils::{
     ASSOCIATED_TOKEN_PROGRAM, PUMPFUN_EVENT_AUTH, PUMPFUN_FEE_ACC, SYSTEM_PROGRAM, TOKEN_PROGRAM,
 };
-use std::collections::HashMap;
 
 struct PoolInfo {
     pool_id: Pubkey,
@@ -47,13 +48,11 @@ impl PumpSwap {
         Self { client, admin }
     }
 
-    pub fn get_admin(&self) -> Keypair {
-        self.admin.insecure_clone()
-    }
-
-    pub fn wrap_admin_sol(&self, total_amount: u64) -> Instruction {
+    pub fn wrap_admin_sol(&self, total_amount: u64) -> Vec<Instruction> {
         let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &ID); // mint ata for admin
-        system_instruction::transfer(&self.admin.pubkey(), &ata, total_amount)
+        let transfer_ix = system_instruction::transfer(&self.admin.pubkey(), &ata, total_amount); 
+        let sync_ix = sync_native(&SplID, &ata).unwrap(); 
+        vec![transfer_ix, sync_ix]
     }
 
     pub async fn buy_ixs(

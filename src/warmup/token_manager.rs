@@ -2,10 +2,9 @@ use super::spls::init_mints;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
-    jupiter::swap::{shadow_swap, swap_ixs, tokens_for_sol},
     params::KeypairWithAmount,
     pumpfun::swap::PumpSwap,
-    solana::utils::{get_admin_keypair, store_secret, test_transactions},
+    solana::utils::{get_admin_keypair, store_secret},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -20,8 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
-use tokio::time::Sleep;
+use std::collections::HashMap;
 
 /**
  * generate new hop keypair for each buying keypair
@@ -187,7 +185,8 @@ impl TokenManager {
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
         let funding_ix = self.swap_provider.wrap_admin_sol(total);
 
-        let instructions: Vec<Instruction> = vec![fee_ix, funding_ix];
+        let mut instructions: Vec<Instruction> = vec![fee_ix];
+        instructions.extend(funding_ix); 
         let blockhash = self.client.get_latest_blockhash().unwrap();
 
         let transaction = Transaction::new_signed_with_payer(
