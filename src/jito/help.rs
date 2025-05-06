@@ -168,9 +168,12 @@ impl BundleTransactions {
                 buyer.keypair.pubkey().to_string()
             );
 
+            let balance = self.client.get_balance(&buyer.keypair.pubkey()).unwrap(); 
+            let buy_with = balance - 10000000; // total balance - 0.01 sol 
+
             let buy_ixs = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &buyer.keypair, buyer.amount, None, true)
+                .buy_ixs(&mint_pubkey, &buyer.keypair, buy_with, None, true)
                 .await
                 .unwrap();
 
@@ -227,12 +230,14 @@ impl BundleTransactions {
             })
             .enumerate()
         {
+            let balance = self.client.get_balance(&keypair.keypair.pubkey()).unwrap(); 
+            let buy_amount = balance - 10000000; 
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
                 .buy_ixs(
                     &mint_pubkey,
                     &keypair.keypair,
-                    keypair.amount - BUFFER_AMOUNT,
+                    buy_amount,
                     Some(800),
                     true,
                 )

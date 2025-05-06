@@ -91,7 +91,7 @@ pub async fn process_bundle(
         .await
         .unwrap();
 
-    sleep(Duration::from_secs(2));
+    sleep(Duration::from_secs(5));
 
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
@@ -100,17 +100,6 @@ pub async fn process_bundle(
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
-
-    let mut dev_balance = client
-        .get_balance(&dev_keypair_with_amount.keypair.pubkey())
-        .unwrap();
-
-    while dev_balance < dev_keypair_with_amount.amount {
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        dev_balance = client
-            .get_balance(&dev_keypair_with_amount.keypair.pubkey())
-            .unwrap();
-    }
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction
     let mut txs_builder: BundleTransactions = BundleTransactions::new(
