@@ -97,24 +97,25 @@ impl TokenManager {
                 .await;
             ixs.extend(buy_ixs);
 
-            let blockhash = self.client.get_latest_blockhash().unwrap();
+            loop {
+                let blockhash = self.client.get_latest_blockhash().unwrap();
 
-            let transaction = Transaction::new_signed_with_payer(
-                &ixs,
-                Some(&self.admin.pubkey()),
-                &[&self.admin.insecure_clone()],
-                blockhash,
-            );
+                let transaction = Transaction::new_signed_with_payer(
+                    &ixs,
+                    Some(&self.admin.pubkey()),
+                    &[&self.admin.insecure_clone()],
+                    blockhash,
+                );
 
-            let sig = self
-                .client
-                .send_and_confirm_transaction(&transaction)
-                .unwrap();
-            println!(
-                "Bought {:?} for {:?} SOL with admin wallet",
-                swap_info.mint, swap_info.amount
-            );
-            println!("Confirmation TX: {:?}", sig);
+                let sig = self.client.send_and_confirm_transaction(&transaction);
+                if let Ok(sig) = sig {
+                    println!("Confirmation TX: {:?}", sig);
+                    break 
+                }
+                if let Err(_) = sig {
+                    println!("Error submitting tx to buy token. Resubmitting...")
+                }
+            }
         }
 
         //Sell memecoin, trasnfer WSOL to hop pubkey, unwrap by setting buyer keypair as recipient
@@ -160,7 +161,7 @@ impl TokenManager {
             if let Some(buying_wallet) = buying_wallet {
                 let hop_keypair = Keypair::new();
                 store_secret("hop_keypairs.txt", &hop_keypair);
-                println!("New keypair: {:?}", hop_keypair.secret()); 
+                println!("New keypair: {:?}", hop_keypair.secret());
                 //Insert hop wallet to actual recipient wallet that is stored in DB for buys
                 self.hop_to_pubkey
                     .insert(hop_keypair.pubkey(), buying_wallet.keypair.pubkey());
@@ -186,7 +187,7 @@ impl TokenManager {
         let funding_ix = self.swap_provider.wrap_admin_sol(total);
 
         let mut instructions: Vec<Instruction> = vec![fee_ix];
-        instructions.extend(funding_ix); 
+        instructions.extend(funding_ix);
         let blockhash = self.client.get_latest_blockhash().unwrap();
 
         let transaction = Transaction::new_signed_with_payer(
