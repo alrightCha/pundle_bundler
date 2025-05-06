@@ -117,8 +117,8 @@ impl PumpSwap {
                     AccountMeta::new_readonly(ID, false),                //WSOL
                     AccountMeta::new(ata, false),                        //MINT ADMIN ATA
                     AccountMeta::new(base_ata, false),                   //WSOL ADMIN ATA
-                    AccountMeta::new(swap_info.pool_base, false),
                     AccountMeta::new(swap_info.pool_quote, false),
+                    AccountMeta::new(swap_info.pool_base, false),
                     AccountMeta::new_readonly(PUMPFUN_FEE_ACC, false),
                     AccountMeta::new(swap_info.fee_recipient_ata, false),
                     AccountMeta::new_readonly(TOKEN_PROGRAM, false),
