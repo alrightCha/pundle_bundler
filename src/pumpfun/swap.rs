@@ -72,7 +72,7 @@ impl PumpSwap {
         let mut ixs: Vec<Instruction> = Vec::new();
 
         let buy_amount_with_slippage =
-            Self::calculate_with_slippage(amount, slippage_bps.unwrap_or(500));
+            Self::calculate_with_slippage(amount, slippage_bps.unwrap_or(200));
 
         let swap_info = self
             .get_swap_info(&mint, &buy_amount_with_slippage, true)
