@@ -1,4 +1,4 @@
-pub const RPC_URL: &str = "https://staked.helius-rpc.com?api-key=16c20cdf-1c1b-44b2-8caa-7597b70d916a";
+pub const RPC_URL: &str = "https://mainnet.helius-rpc.com/?api-key=16c20cdf-1c1b-44b2-8caa-7597b70d916a";
 pub const ORCHESTRATOR_URL: &str = "http://localhost:3001/bundled";
 pub const ADMIN_PUBKEY: &str = "FDB2pWkG8CXwVop6xi8rw8Np8HN1DFV1KMBuJhGpSFaH";
 pub const JITO_TIP_AMOUNT: u64 = 8_000_000;
