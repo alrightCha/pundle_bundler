@@ -52,8 +52,7 @@ pub struct TokenManager {
     pubkey_to_keypair: HashMap<Pubkey, Keypair>,
     hop_to_pubkey: HashMap<Pubkey, Pubkey>,
     admin: Keypair,
-    client: RpcClient,
-    last_funding: Pubkey,
+    client: RpcClient
 }
 
 impl TokenManager {
@@ -65,7 +64,6 @@ impl TokenManager {
         let hop_to_pubkey: HashMap<Pubkey, Pubkey> = HashMap::new();
         let admin = get_admin_keypair();
         let client = RpcClient::new(RPC_URL);
-        let last_funding = Pubkey::default();
 
         Self {
             swap_provider,
@@ -75,7 +73,6 @@ impl TokenManager {
             hop_to_pubkey,
             admin,
             client,
-            last_funding,
         }
     }
 
@@ -150,6 +147,30 @@ impl TokenManager {
                     self.send_tx(keypair, buyer_pubkey).await;
                 }
             }
+        }
+
+        let admin_wsol_ata = get_associated_token_address(&self.admin.pubkey(), &ID); 
+        //Close admin ATA 
+        let close_ix = close_account(
+            &SplID,
+            &admin_wsol_ata,             
+            &self.admin.pubkey(), 
+            &self.admin.pubkey(), 
+            &vec![&self.admin.pubkey()]
+        ).unwrap(); 
+  
+        let blockhash = self.client.get_latest_blockhash().unwrap();
+    
+        let tx = Transaction::new_signed_with_payer(
+            &vec![close_ix],
+            Some(&self.admin.pubkey()),
+            &vec![&self.admin.insecure_clone()],
+            blockhash,
+        );
+    
+        let sig = self.client.send_and_confirm_transaction(&tx);
+        if let Ok(sig) = sig{
+            println!("Closed ATA and refunded SOL balance for admin with sig confirm: {:?}", sig); 
         }
     }
 
