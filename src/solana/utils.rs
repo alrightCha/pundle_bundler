@@ -43,6 +43,9 @@ pub fn create_keypair(
     let requester_dir = format!("accounts/{}", requester.to_string());
     std::fs::create_dir_all(&requester_dir)?;
 
+    let mint_dir = format!("accounts/{}/{}", requester.to_string(), mint); 
+    std::fs::create_dir_all(&mint_dir)?; 
+    
     // Create file path with keypair public key as filename
     let file_path = format!(
         "{}/{}/{}.json",
