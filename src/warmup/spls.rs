@@ -37,6 +37,7 @@ const WALE: &str = "AAE7JS7EAHkQzRKn1Cmt7TP5cQR39Df8D3zxWmNjpump"; //32
 const CFX: &str = "RhFVq1Zt81VvcoSEMSyCGZZv5SwBdA8MV7w4HEMpump"; //33
 
 pub fn init_mints() -> Vec<Pubkey> {
+    let usdc: Pubkey = Pubkey::from_str(USDC).unwrap();
     let house: Pubkey = Pubkey::from_str(HOUSE).unwrap();
     let grok: Pubkey = Pubkey::from_str(GORK).unwrap();
     let troll: Pubkey = Pubkey::from_str(TROLL).unwrap();
@@ -71,7 +72,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
-        house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, pudgy, cbbtc, ufd,
+        usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, pudgy, cbbtc, ufd,
         retardio, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino, jup,
         ox, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]

@@ -78,26 +78,41 @@ impl TokenManager {
 
     //TODO: Implement retry here
     pub async fn shadow_bundle(&mut self, lut: &AddressLookupTableAccount) {
-        let mut buy_sell_ixs: Vec<Instruction> = Vec::new();
+        let mut buy_ixs: Vec<Instruction> = Vec::new();
+        let mut sell_ixs: Vec<Instruction> = Vec::new();
         //Make admin swaps to tokens
-        for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
-            let buy_ixs = self
+        for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
+            let ixs = self
                 .swap_provider
                 .buy_ixs(swap_info.mint, swap_info.amount, None)
                 .await;
-            buy_sell_ixs.extend(buy_ixs);
+            buy_ixs.extend(ixs);
+        }
 
+        loop {
+            let jito_result = self.build_send_bundle(buy_ixs.clone(), lut).await;
+            if let Ok(jito_result) = jito_result {
+                println!("Confirmation Bundle: {:?}", jito_result);
+                break;
+            }
+            if let Err(_) = jito_result {
+                println!("Error submitting tx to buy token. Resubmitting...");
+                sleep(Duration::from_secs(3));
+            }
+        }
+
+        for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
-                let sell_ixs = self
+                let ixs = self
                     .swap_provider
                     .sell_ixs(swap_info.mint, keypair.pubkey())
                     .await;
-                buy_sell_ixs.extend(sell_ixs);
+                sell_ixs.extend(ixs);
             }
         }
 
         loop {
-            let jito_result = self.build_send_bundle(buy_sell_ixs.clone(), lut).await;
+            let jito_result = self.build_send_bundle(sell_ixs.clone(), lut).await;
             if let Ok(jito_result) = jito_result {
                 println!("Confirmation Bundle: {:?}", jito_result);
                 break;
