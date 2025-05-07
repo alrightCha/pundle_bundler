@@ -1,4 +1,4 @@
-use super::spls::init_mints;
+use super::spls::{init_mints, USDC};
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
@@ -19,7 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::{collections::HashMap, thread::sleep, time::Duration};
+use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
 /**
  * generate new hop keypair for each buying keypair
@@ -91,8 +91,8 @@ impl TokenManager {
 
         loop {
             let jito_result = self.build_send_bundle(buy_ixs.clone(), lut).await;
-            if let Ok(jito_result) = jito_result {
-                println!("Confirmation Bundle: {:?}", jito_result);
+            let confirmed = self.get_usdc_balance(true);
+            if confirmed {
                 break;
             }
             if let Err(_) = jito_result {
@@ -113,9 +113,9 @@ impl TokenManager {
 
         loop {
             let jito_result = self.build_send_bundle(sell_ixs.clone(), lut).await;
-            if let Ok(jito_result) = jito_result {
-                println!("Confirmation Bundle: {:?}", jito_result);
-                break;
+            let confirmed = self.get_usdc_balance(false); 
+            if confirmed{
+                break; 
             }
             if let Err(_) = jito_result {
                 println!("Error submitting tx to buy token. Resubmitting...");
@@ -238,6 +238,17 @@ impl TokenManager {
                 );
             }
         };
+    }
+
+    fn get_usdc_balance(&self, buy: bool) -> bool {
+        let usdc = Pubkey::from_str(USDC).unwrap();
+        let first_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
+        let balance = self.client.get_token_account_balance(&first_ata).unwrap();
+        if let Some(ui_amount) = balance.ui_amount {
+            let balance_not_null = ui_amount > 0.0;
+            return buy == balance_not_null;
+        }
+        false
     }
 
     async fn build_send_bundle(
