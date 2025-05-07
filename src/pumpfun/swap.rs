@@ -1,7 +1,7 @@
 use crate::jupiter::swap::pumpswap_pool_id;
 use crate::pumpfun::utils::{PUMP_AMM_PROGRAM, PUMP_GLOBAL};
 use crate::solana::utils::get_ata_balance;
-use crate::{config::RPC_URL, params::KeypairWithAmount, solana::utils::get_admin_keypair};
+use crate::{config::RPC_URL, solana::utils::get_admin_keypair};
 use anchor_client::anchor_lang::InstructionData;
 use anchor_spl::associated_token::{
     get_associated_token_address,
