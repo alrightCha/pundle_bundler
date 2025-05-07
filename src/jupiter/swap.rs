@@ -227,6 +227,7 @@ pub async fn rate(
 }
 
 pub async fn pumpswap_pool_id(mint: &Pubkey, amount: u64, buy: bool) -> Option<(Pubkey, u64)> {
+    println!("Finding route for mint: {:?}", mint.to_string()); 
     let quotes = jup_ag::quote(
          if buy { ID } else { mint.clone() },
         if buy { mint.clone() } else { ID },
