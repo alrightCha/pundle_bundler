@@ -4,7 +4,7 @@ use crate::{
     jito::jito::JitoBundle,
     params::KeypairWithAmount,
     pumpfun::swap::PumpSwap,
-    solana::utils::{get_admin_keypair, store_secret},
+    solana::utils::{build_transaction, get_admin_keypair, store_secret},
 };
 use anchor_spl::token::spl_token::instruction::close_account;
 use anchor_spl::{
@@ -19,7 +19,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::collections::HashMap;
+use std::{collections::HashMap, thread::sleep, time::Duration};
 
 /**
  * generate new hop keypair for each buying keypair
@@ -52,7 +52,7 @@ pub struct TokenManager {
     pubkey_to_keypair: HashMap<Pubkey, Keypair>,
     hop_to_pubkey: HashMap<Pubkey, Pubkey>,
     admin: Keypair,
-    client: RpcClient
+    client: RpcClient,
 }
 
 impl TokenManager {
@@ -77,106 +77,65 @@ impl TokenManager {
     }
 
     //TODO: Implement retry here
-    pub async fn shadow_bundle(&mut self, wallets: &Vec<KeypairWithAmount>) {
-        //Setup hashmaps and wrap total sol needed by admin
-        self.init_alloc_ixs(wallets).await;
-
-        //Buy memecoins with admin wallet
-        let priority_fee_amount = 500_000; // 0.0005 SOL
-        let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+    pub async fn shadow_bundle(&mut self, lut: &AddressLookupTableAccount) {
+        let mut buy_sell_ixs: Vec<Instruction> = Vec::new();
         //Make admin swaps to tokens
-        for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
-            let mut ixs: Vec<Instruction> = Vec::new();
-            ixs.push(fee_ix.clone());
+        for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             let buy_ixs = self
                 .swap_provider
                 .buy_ixs(swap_info.mint, swap_info.amount, None)
                 .await;
-            ixs.extend(buy_ixs);
+            buy_sell_ixs.extend(buy_ixs);
 
-            loop {
-                let blockhash = self.client.get_latest_blockhash().unwrap();
-
-                let transaction = Transaction::new_signed_with_payer(
-                    &ixs,
-                    Some(&self.admin.pubkey()),
-                    &[&self.admin.insecure_clone()],
-                    blockhash,
-                );
-
-                let sig = self.client.send_and_confirm_transaction(&transaction);
-                if let Ok(sig) = sig {
-                    println!("Confirmation TX: {:?}", sig);
-                    break 
-                }
-                if let Err(_) = sig {
-                    println!("Error submitting tx to buy token. Resubmitting...")
-                }
+            if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
+                let sell_ixs = self
+                    .swap_provider
+                    .sell_ixs(swap_info.mint, keypair.pubkey())
+                    .await;
+                buy_sell_ixs.extend(sell_ixs);
             }
         }
 
-        //Sell memecoin, trasnfer WSOL to hop pubkey, unwrap by setting buyer keypair as recipient
+        loop {
+            let jito_result = self.build_send_bundle(buy_sell_ixs.clone(), lut).await;
+            if let Ok(jito_result) = jito_result {
+                println!("Confirmation Bundle: {:?}", jito_result);
+                break;
+            }
+            if let Err(_) = jito_result {
+                println!("Error submitting tx to buy token. Resubmitting...");
+                sleep(Duration::from_secs(3));
+            }
+        }
+
+        //transfer WSOL to hop pubkey, unwrap by setting buyer keypair as recipient
         for (_, keypair) in self.pubkey_to_keypair.iter() {
             if let Some(buyer_pubkey) = self.hop_to_pubkey.get(&keypair.pubkey()) {
-                if let Some(mint) = self.wallet_to_mint_with_amount.get(&keypair.pubkey()) {
-                    let mut ixs: Vec<Instruction> = vec![fee_ix.clone()];
-                    let sell_ixs = self
-                        .swap_provider
-                        .sell_ixs(mint.mint, keypair.pubkey())
-                        .await;
-                    ixs.extend(sell_ixs);
-                    let blockhash = self.client.get_latest_blockhash().unwrap();
-
-                    let transaction = Transaction::new_signed_with_payer(
-                        &ixs,
-                        Some(&self.admin.pubkey()),
-                        &[&self.admin.insecure_clone()],
-                        blockhash,
-                    );
-
-                    let sig = self
-                        .client
-                        .send_and_confirm_transaction(&transaction)
-                        .unwrap();
-                    println!(
-                        "Swapped back token {:?} from admin wallet to hop wallet {:?}",
-                        mint.mint.to_string(),
-                        keypair.pubkey().to_string()
-                    );
-                    println!("Tx Signature confirmation: {:?}", sig);
-                    self.send_tx(keypair, buyer_pubkey).await;
-                }
+                self.send_tx(keypair, buyer_pubkey).await;
             }
         }
+        self.close_admin_wsol();
+    }
 
-        let admin_wsol_ata = get_associated_token_address(&self.admin.pubkey(), &ID); 
-        //Close admin ATA 
-        let close_ix = close_account(
-            &SplID,
-            &admin_wsol_ata,             
-            &self.admin.pubkey(), 
-            &self.admin.pubkey(), 
-            &vec![&self.admin.pubkey()]
-        ).unwrap(); 
-  
-        let blockhash = self.client.get_latest_blockhash().unwrap();
-    
-        let tx = Transaction::new_signed_with_payer(
-            &vec![close_ix],
-            Some(&self.admin.pubkey()),
-            &vec![&self.admin.insecure_clone()],
-            blockhash,
-        );
-    
-        let sig = self.client.send_and_confirm_transaction(&tx);
-        if let Ok(sig) = sig{
-            println!("Closed ATA and refunded SOL balance for admin with sig confirm: {:?}", sig); 
+    pub fn get_lut_extension(&self) -> Vec<Pubkey> {
+        let mut all_pubkeys: Vec<Pubkey> = Vec::new();
+
+        for (pubkey, _) in self.pubkey_to_keypair.iter() {
+            if let Some(mint) = self.wallet_to_mint_with_amount.get(pubkey) {
+                all_pubkeys.push(*pubkey);
+                all_pubkeys.push(mint.mint);
+                let admin_ata = get_associated_token_address(&self.admin.pubkey(), &mint.mint);
+                all_pubkeys.push(admin_ata);
+                let recip_wsol_ata = get_associated_token_address(&pubkey, &ID);
+                all_pubkeys.push(recip_wsol_ata);
+            }
         }
+        all_pubkeys
     }
 
     //1ST CALL
     //generates hop keypairs, collects total swap amount, maps each new keypair to associated buyer keypair, returns swap total usdc amount for admin wallet
-    async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) {
+    pub async fn init_alloc_ixs(&mut self, wallets: &Vec<KeypairWithAmount>) {
         for (index, mint) in self.tokens.iter().enumerate() {
             let buying_wallet = wallets.get(index);
             if let Some(buying_wallet) = buying_wallet {
@@ -266,35 +225,153 @@ impl TokenManager {
         };
     }
 
-    fn build_transaction_multi_luts(
+    async fn build_send_bundle(
         &self,
-        ixes: Vec<Instruction>,
-        luts: Vec<Pubkey>,
-    ) -> VersionedTransaction {
-        let blockhash = self.client.get_latest_blockhash().unwrap();
+        ixs: Vec<Instruction>,
+        lut: &AddressLookupTableAccount,
+    ) -> Result<(), anyhow::Error> {
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
-        let mut all_luts: Vec<AddressLookupTableAccount> = Vec::new();
+        let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
-        for lut in luts {
-            let raw_account = self.client.get_account(&lut).unwrap();
-            let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
+        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
+        let admin_signer = self.admin.insecure_clone();
+        let signers = &vec![&admin_signer];
 
-            let address_lookup_table_account = AddressLookupTableAccount {
-                key: lut,
-                addresses: address_lookup_table.addresses.to_vec(),
-            };
-            all_luts.push(address_lookup_table_account);
+        for ix in ixs {
+            let mut maybe_ixs: Vec<Instruction> = Vec::new();
+            for cix in current_tx_ixs.iter() {
+                maybe_ixs.push(cix.clone());
+            }
+            maybe_ixs.push(ix.clone());
+
+            let maybe_tx = build_transaction(
+                &self.client,
+                &maybe_ixs,
+                signers.clone(),
+                lut.clone(),
+                &self.admin,
+            );
+
+            let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+
+            if size < 1232 {
+                current_tx_ixs.push(ix.clone());
+            } else {
+                let mut new_ixs: Vec<Instruction> = Vec::new();
+                let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
+                new_ixs.push(priority_fee_ix);
+                new_ixs.push(ix.clone());
+                if transactions.len() % 5 == 4 {
+                    let mut maybe_with_tip: Vec<Instruction> = Vec::new();
+                    for ix in current_tx_ixs.iter() {
+                        maybe_with_tip.push(ix.clone());
+                    }
+                    let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+                    maybe_with_tip.push(tip_ix.clone());
+                    let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+
+                    if size > 1232 {
+                        let revert_ix = current_tx_ixs.pop();
+                        if let Some(revert_ix) = revert_ix {
+                            new_ixs.push(revert_ix);
+                        }
+                        current_tx_ixs.push(tip_ix);
+                    }
+                }
+                let tx = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    signers.clone(),
+                    lut.clone(),
+                    &self.admin,
+                );
+                transactions.push(tx);
+                current_tx_ixs = new_ixs;
+            }
         }
 
-        let message =
-            Message::try_compile(&self.admin.pubkey(), &ixes, &all_luts, blockhash).unwrap();
+        if current_tx_ixs.len() > 0 {
+            let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+            let mut maybe_ixs: Vec<Instruction> = Vec::new();
+            for ix in current_tx_ixs.iter() {
+                maybe_ixs.push(ix.clone());
+            }
+            maybe_ixs.push(tip_ix.clone());
 
-        // Compile the message with the payer's public key
+            let one_tx = build_transaction(
+                &self.client,
+                &maybe_ixs,
+                signers.clone(),
+                lut.clone(),
+                &self.admin,
+            );
+            let size: usize = bincode::serialized_size(&one_tx).unwrap() as usize;
 
-        let versioned_message = VersionedMessage::V0(message);
+            if size > 1232 {
+                let first_tx = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    signers.clone(),
+                    lut.clone(),
+                    &self.admin,
+                );
+                let tip_tx = build_transaction(
+                    &self.client,
+                    &vec![tip_ix],
+                    signers.clone(),
+                    lut.clone(),
+                    &self.admin,
+                );
 
-        // Create the transaction with all keypairs as signers
-        VersionedTransaction::try_new(versioned_message, &vec![&self.admin.insecure_clone()])
-            .unwrap()
+                if transactions.len() % 5 < 4 {
+                    //Add 2 txs
+                    transactions.push(first_tx);
+                    transactions.push(tip_tx);
+                } else {
+                    //Add 3 txs
+                    transactions.push(tip_tx.clone());
+                    transactions.push(first_tx);
+                    transactions.push(tip_tx);
+                }
+            } else {
+                transactions.push(one_tx);
+            }
+        }
+
+        let result = jito
+            .process_bundle(transactions, Pubkey::default(), None)
+            .await;
+        result
+    }
+
+    fn close_admin_wsol(&self) {
+        let admin_wsol_ata = get_associated_token_address(&self.admin.pubkey(), &ID);
+        //Close admin ATA
+        let close_ix = close_account(
+            &SplID,
+            &admin_wsol_ata,
+            &self.admin.pubkey(),
+            &self.admin.pubkey(),
+            &vec![&self.admin.pubkey()],
+        )
+        .unwrap();
+
+        let blockhash = self.client.get_latest_blockhash().unwrap();
+
+        let tx = Transaction::new_signed_with_payer(
+            &vec![close_ix],
+            Some(&self.admin.pubkey()),
+            &vec![&self.admin.insecure_clone()],
+            blockhash,
+        );
+
+        let sig = self.client.send_and_confirm_transaction(&tx);
+        if let Ok(sig) = sig {
+            println!(
+                "Closed ATA and refunded SOL balance for admin with sig confirm: {:?}",
+                sig
+            );
+        }
     }
 }

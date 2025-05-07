@@ -105,7 +105,6 @@ impl BundleTransactions {
     //When adding ixs, remove actual keypairwithamount from keypairs to treat
     pub async fn collect_first_bundle_txs(
         &mut self,
-        dev_amount: u64,
         token_metadata: Create,
     ) -> Vec<VersionedTransaction> {
         let rent = Rent::default();
@@ -114,7 +113,8 @@ impl BundleTransactions {
         let for_many: u64 = BUFFER_AMOUNT * std::cmp::max(self.keypairs_to_treat.len(), 10) as u64;
         let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + for_many;
 
-        let final_dev_buy_amount = dev_amount - to_sub_for_dev;
+        let dev_balance = self.client.get_balance(&self.dev_keypair.pubkey()).unwrap(); 
+        let final_dev_buy_amount = dev_balance - to_sub_for_dev;
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
 

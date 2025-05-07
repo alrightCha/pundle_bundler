@@ -11,8 +11,8 @@ use super::help::BundleTransactions;
 use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
-use crate::solana::utils::validate_delayed_txs;
 use crate::solana::lut::create_lut;
+use crate::solana::utils::validate_delayed_txs;
 use crate::warmup::token_manager::TokenManager;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
@@ -83,23 +83,33 @@ pub async fn process_bundle(
         all_transfers.push(new_transfer);
     }
 
-    //STEP 2: Transfer funds needed from admin to dev + keypairs in a bundle
     let mut shadow_manager = TokenManager::new();
-    shadow_manager.shadow_bundle(&all_transfers).await;
+    //Init hashmaps and wsol holding for admin
+    shadow_manager.init_alloc_ixs(&all_transfers).await;
 
+    //Extend LUT with rest of addresses
+    let extension: Vec<Pubkey> = shadow_manager.get_lut_extension(); 
+    pubkeys_for_lut.extend(extension); 
+
+    //Create & Extend LUT 
     let lut_pubkey: Pubkey = create_lut(&client, &admin_kp, &pubkeys_for_lut)
         .await
         .unwrap();
 
+    //Ensure LUT is ready
     sleep(Duration::from_secs(5));
 
+    //Build LUT
     let raw_account = client.get_account(&lut_pubkey).unwrap();
     let address_lookup_table = AddressLookupTable::deserialize(&raw_account.data).unwrap();
-
     let address_lookup_table_account = AddressLookupTableAccount {
         key: lut_pubkey,
         addresses: address_lookup_table.addresses.to_vec(),
     };
+
+    //BUY MEMES; SWAP TO WSOL TO RECIPIENTS; CLOSE WSOL FROM HOP ACCOUNTS TO TOKEN BUYERS
+    shadow_manager.shadow_bundle(&address_lookup_table_account).await;
+
 
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction
     let mut txs_builder: BundleTransactions = BundleTransactions::new(
@@ -115,9 +125,8 @@ pub async fn process_bundle(
     );
 
     //Submitting first bundle
-    let first_bundle: Vec<VersionedTransaction> = txs_builder
-        .collect_first_bundle_txs(dev_keypair_with_amount.amount, token_metadata)
-        .await;
+    let first_bundle: Vec<VersionedTransaction> =
+        txs_builder.collect_first_bundle_txs(token_metadata).await;
 
     if txs_builder.has_delayed_bundle() {
         let mint_pubkey = mint.pubkey();
