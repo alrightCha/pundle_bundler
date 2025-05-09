@@ -83,7 +83,21 @@ impl TokenManager {
             buy_ixs.extend(ixs);
         }
 
-        self.build_send_bundle(buy_ixs.clone(), lut).await;
+        loop {
+            let _ = self.build_send_bundle(buy_ixs.clone(), lut).await;
+            let usdc = Pubkey::from_str(USDC).unwrap();
+            let usdc_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
+            let usdc_balance = self.client.get_token_account_balance(&usdc_ata);
+            if let Ok(balance) = usdc_balance {
+                if let Some(ui_amount) = balance.ui_amount {
+                    if ui_amount > 0.0 {
+                        break;
+                    }else{
+                        sleep(Duration::from_secs(3));
+                    }
+                }
+            }
+        }
 
         for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
@@ -97,7 +111,7 @@ impl TokenManager {
 
         self.build_send_bundle(sell_ixs.clone(), lut).await;
 
-        //unwrap WSOL for buyers 
+        //unwrap WSOL for buyers
         for (_, keypair) in self.pubkey_to_keypair.iter() {
             self.send_tx(keypair).await;
         }
