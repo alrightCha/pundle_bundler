@@ -16,6 +16,8 @@ use solana_sdk::{
 };
 use spl_token::amount_to_ui_amount;
 use std::str::FromStr;
+use std::thread::sleep;
+use std::time::Duration;
 
 pub async fn swap_ixs(
     keypair: &Keypair,
@@ -227,22 +229,28 @@ pub async fn rate(
 }
 
 pub async fn pumpswap_pool_id(mint: &Pubkey, amount: u64, buy: bool) -> Option<(Pubkey, u64)> {
-    println!("Finding route for mint: {:?}", mint.to_string()); 
-    let quotes = jup_ag::quote(
-         if buy { ID } else { mint.clone() },
-        if buy { mint.clone() } else { ID },
-        amount,
-        QuoteConfig {
-            only_direct_routes: true,
-            slippage_bps: Some(100),
-            dexes: Some(vec!["Pump.fun Amm".to_string()]),
-            ..QuoteConfig::default()
-        },
-    )
-    .await
-    .unwrap();
+    loop {
+        println!("Finding route for mint: {:?}", mint.to_string());
+        let quotes = jup_ag::quote(
+            if buy { ID } else { mint.clone() },
+            if buy { mint.clone() } else { ID },
+            amount,
+            QuoteConfig {
+                only_direct_routes: true,
+                slippage_bps: Some(100),
+                dexes: Some(vec!["Pump.fun Amm".to_string()]),
+                ..QuoteConfig::default()
+            },
+        )
+        .await;
 
-    let pool_id = quotes.route_plan[0].swap_info.amm_key;
-    let amount_out = quotes.out_amount;
-    Some((pool_id, amount_out))
+        if let Ok(quotes) = quotes {
+            let pool_id = quotes.route_plan[0].swap_info.amm_key;
+            let amount_out = quotes.out_amount;
+            return Some((pool_id, amount_out))
+        } else {
+            println!("Could not find route. Re-attempt..");
+            sleep(Duration::from_secs(1));
+        }
+    }
 }
