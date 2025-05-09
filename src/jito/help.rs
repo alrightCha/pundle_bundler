@@ -107,19 +107,19 @@ impl BundleTransactions {
     pub async fn collect_first_bundle_txs(
         &mut self,
         token_metadata: Create,
-    ) -> Vec<VersionedTransaction> {
+    ) -> Vec<Vec<Instruction>> {
+        let mut all_ixs: Vec<Vec<Instruction>> = Vec::new();
+
         let rent = Rent::default();
         let rent_exempt_min = rent.minimum_balance(0);
 
         let for_many: u64 = BUFFER_AMOUNT * std::cmp::max(self.keypairs_to_treat.len(), 10) as u64;
         let to_sub_for_dev: u64 = rent_exempt_min + FEE_AMOUNT + JITO_TIP_AMOUNT + for_many;
 
-        let dev_balance = self.client.get_balance(&self.dev_keypair.pubkey()).unwrap(); 
+        let dev_balance = self.client.get_balance(&self.dev_keypair.pubkey()).unwrap();
         let final_dev_buy_amount = dev_balance - to_sub_for_dev;
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey();
-
-        let mut transactions: Vec<VersionedTransaction> = Vec::new();
 
         let jito_tip_ix = self.get_tip_ix(None).await;
         let priority_fee_ix = self.get_priority_fee_ix(2_000_000);
@@ -151,13 +151,12 @@ impl BundleTransactions {
                 .unwrap();
             first_tx_ixs.push(dev_jito_tip);
         }
-        let first_tx: VersionedTransaction = self.get_tx(&first_tx_ixs, true);
 
-        transactions.push(first_tx);
+        all_ixs.push(first_tx_ixs);
 
         //Break early and return first tx if with delay
         if self.with_delay {
-            return transactions;
+            return all_ixs;
         }
 
         let mut tx_ixs: Vec<Instruction> = vec![priority_fee_ix.clone()];
@@ -169,8 +168,8 @@ impl BundleTransactions {
                 buyer.keypair.pubkey().to_string()
             );
 
-            let balance = self.client.get_balance(&buyer.keypair.pubkey()).unwrap(); 
-            let buy_with = balance - 10000000; // total balance - 0.01 sol 
+            let balance = self.client.get_balance(&buyer.keypair.pubkey()).unwrap();
+            let buy_with = balance - 10000000; // total balance - 0.01 sol
 
             let buy_ixs = self
                 .pumpfun_client
@@ -184,34 +183,28 @@ impl BundleTransactions {
                 // last item or 23rd item of list
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
-                let new_tx = self.get_tx(&tx_ixs, false);
-                transactions.push(new_tx);
+                all_ixs.push(tx_ixs);
                 tx_ixs = Vec::new();
                 break;
             }
 
             // Every 5 buyers, create new transaction
             if (index + 1) % 5 == 0 {
-                let new_tx = self.get_tx(&tx_ixs, false);
-                transactions.push(new_tx);
+                all_ixs.push(tx_ixs);
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
         }
 
-        if tx_ixs.len() > 1 && transactions.len() < 5 {
+        if tx_ixs.len() > 1 && all_ixs.len() < 5 {
             println!("Added tip ix");
             tx_ixs.push(jito_tip_ix);
-            let last_tx = self.get_tx(&tx_ixs, false);
-            transactions.push(last_tx);
+            all_ixs.push(tx_ixs);
         }
-
-        println!("Remaining instructions in tx ixs : {:?}", tx_ixs.len());
-        test_transactions(&self.client, &transactions).await;
-        transactions
+        all_ixs
     }
 
-    pub async fn collect_rest_txs(&mut self) -> Vec<VersionedTransaction> {
-        let mut transactions: Vec<VersionedTransaction> = Vec::new();
+    pub async fn collect_rest_txs(&mut self) -> Vec<Vec<Instruction>> {
+        let mut transactions: Vec<Vec<Instruction>> = Vec::new();
 
         let mint_pubkey: Pubkey = self.mint_keypair.pubkey(); // Split off the first 27 buyers since they have been treated
 
@@ -231,17 +224,11 @@ impl BundleTransactions {
             })
             .enumerate()
         {
-            let balance = self.client.get_balance(&keypair.keypair.pubkey()).unwrap(); 
-            let buy_amount = balance - 10000000; 
+            let balance = self.client.get_balance(&keypair.keypair.pubkey()).unwrap();
+            let buy_amount = balance - 10000000;
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(
-                    &mint_pubkey,
-                    &keypair.keypair,
-                    buy_amount,
-                    Some(800),
-                    true,
-                )
+                .buy_ixs(&mint_pubkey, &keypair.keypair, buy_amount, Some(800), true)
                 .await
                 .unwrap();
 
@@ -251,8 +238,7 @@ impl BundleTransactions {
             if transactions.len() + 1 % 5 == 0 && (index + 1) % 4 == 0 {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
-                let new_tx = self.get_tx(&tx_ixs, false);
-                transactions.push(new_tx);
+                transactions.push(tx_ixs.clone());
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
             // Check if we're on the last buyer
@@ -262,13 +248,12 @@ impl BundleTransactions {
             {
                 println!("Adding tip here");
                 tx_ixs.push(jito_tip_ix.clone());
-                let new_tx = self.get_tx(&tx_ixs, false);
-                transactions.push(new_tx);
+
+                transactions.push(tx_ixs.clone());
             }
             // Normal case: every 5 buyers
             else if (index + 1) % 5 == 0 {
-                let new_tx = self.get_tx(&tx_ixs, false);
-                transactions.push(new_tx);
+                transactions.push(tx_ixs);
                 tx_ixs = vec![priority_fee_ix.clone()];
             }
         }
@@ -280,23 +265,33 @@ impl BundleTransactions {
         // In total we can get 23 buys + dev buy for first bundle
     }
 
-    fn get_tx(&self, ixs: &Vec<Instruction>, with_dev: bool) -> VersionedTransaction {
-        let payer = match with_dev {
-            true => &self.dev_keypair,
-            false => &self.admin_keypair,
-        };
+    pub fn get_txs(
+        &self,
+        ixs: &Vec<Vec<Instruction>>,
+        with_dev: bool,
+    ) -> Vec<VersionedTransaction> {
+        let mut txs: Vec<VersionedTransaction> = Vec::new();
+        for (index, ix) in ixs.iter().enumerate() {
+            let mut payer = &self.admin_keypair;
+            if with_dev && index == 0 {
+                payer = &self.dev_keypair;
+            }
 
-        let signers = self.get_signers(&ixs);
-        let tx = build_transaction(
-            &self.client,
-            &ixs,
-            signers.iter().collect(),
-            self.address_lookup_table_account.clone(),
-            payer,
-        );
-        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-        println!("TX SIZE: {:?}, instruction count: {:?}", size, ixs.len()); // - 1 for create + - 1 for fee in others, if more -> jito tip ix
-        tx
+            let signers = self.get_signers(&ix);
+            let tx = build_transaction(
+                &self.client,
+                &ix,
+                signers.iter().collect(),
+                self.address_lookup_table_account.clone(),
+                payer,
+            );
+            let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+            println!("TX SIZE: {:?}, instruction count: {:?}", size, ixs.len());
+            // - 1 for create + - 1 for fee in others, if more -> jito tip ix
+            txs.push(tx);
+        }
+
+        txs
     }
 
     fn get_signers(&self, ixs: &Vec<Instruction>) -> Vec<Keypair> {
