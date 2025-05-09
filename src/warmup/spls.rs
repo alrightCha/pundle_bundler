@@ -27,7 +27,6 @@ const PHARMA: &str = "HtrvP4fG9KiFqFeu4f32RuZiwG3nmYwPkPZ61nAbpump"; //21
 const ANIME: &str = "3pA668WX5vNjQMw2KdHJ8RpZceG6gEfXWtRvGChjbSnz"; //22
 const SHRIMP: &str = "BMnMaiMu5B29o3eMDena8cxwL9R4CDwotxQMG2Tspump"; //23
 const CINO: &str = "BUUB7DpQT1mcTrs55oXawgEbxm5khAozsbmyhMdRpump"; //24
-const JUP: &str = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"; //25
 const OX: &str = "3E2z4KX7y457xJqK9RQeJhA29oPdoUvAAD3Ea3zQyuG3"; //26
 const WIZARD: &str = "8oosbx7jJrZxm5m4ThKhBpvwwG4QpoAe6i4GiG19pump"; //27
 const SUGAR: &str = "5iVmFCCwJTuuw7p4FrxYoZ1bUNdjg14j7uv5hMsMpump"; //28
@@ -63,7 +62,6 @@ pub fn init_mints() -> Vec<Pubkey> {
     let anime: Pubkey = Pubkey::from_str(ANIME).unwrap();
     let shrimp: Pubkey = Pubkey::from_str(SHRIMP).unwrap();
     let cino: Pubkey = Pubkey::from_str(CINO).unwrap();
-    let jup: Pubkey = Pubkey::from_str(JUP).unwrap();
     let ox: Pubkey = Pubkey::from_str(OX).unwrap();
     let wizard: Pubkey = Pubkey::from_str(WIZARD).unwrap();
     let sugar: Pubkey = Pubkey::from_str(SUGAR).unwrap();
@@ -76,6 +74,6 @@ pub fn init_mints() -> Vec<Pubkey> {
     vec![
         usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, pudgy, cbbtc, ufd,
         fog, retardio, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino,
-        jup, ox, wizard, sugar, woke, fritz, deli, wale, cfx,
+        ox, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]
 }
