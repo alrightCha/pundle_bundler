@@ -347,17 +347,7 @@ impl TokenManager {
         print!("We received {:?} buy bundles", txs_chunks.len());
 
         for chunk in txs_chunks {
-            loop {
-                let result = jito
-                    .submit_bundle(chunk.clone(), Pubkey::default(), None)
-                    .await;
-                if let Ok(_) = result {
-                    break;
-                } else {
-                    sleep(Duration::from_secs(2));
-                    println!("Retrying buy bundle");
-                }
-            }
+            let _ = jito.submit_bundle(chunk, Pubkey::default(), None).await;
         }
     }
 
