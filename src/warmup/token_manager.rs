@@ -72,21 +72,19 @@ impl TokenManager {
 
     //TODO: Implement retry here
     pub async fn shadow_bundle(&mut self, lut: &AddressLookupTableAccount) {
-        let mut buy_ixs: Vec<Instruction> = Vec::new();
-        let mut sell_ixs: Vec<Instruction> = Vec::new();
-        //Make admin swaps to tokens
-        for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
-            let ixs = self
-                .swap_provider
-                .buy_ixs(swap_info.mint, swap_info.amount, None)
-                .await;
-            buy_ixs.extend(ixs);
-        }
-
         let usdc = Pubkey::from_str(USDC).unwrap();
         let usdc_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
 
         loop {
+            //Make admin swaps to tokens
+            let mut buy_ixs: Vec<Instruction> = Vec::new();
+            for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
+                let ixs = self
+                    .swap_provider
+                    .buy_ixs(swap_info.mint, swap_info.amount, None)
+                    .await;
+                buy_ixs.extend(ixs);
+            }
             let _ = self.build_send_bundle(buy_ixs.clone(), lut).await;
             let usdc_balance = self.client.get_token_account_balance(&usdc_ata);
             if let Ok(balance) = usdc_balance {
@@ -102,17 +100,17 @@ impl TokenManager {
 
         sleep(Duration::from_secs(30));
 
-        for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
-            if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
-                let ixs = self
-                    .swap_provider
-                    .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
-                    .await;
-                sell_ixs.extend(ixs);
-            }
-        }
-
         loop {
+            let mut sell_ixs: Vec<Instruction> = Vec::new();
+            for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
+                if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
+                    let ixs = self
+                        .swap_provider
+                        .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
+                        .await;
+                    sell_ixs.extend(ixs);
+                }
+            }
             let _ = self.build_send_bundle(sell_ixs.clone(), lut).await;
             let usdc_balance = self.client.get_token_account_balance(&usdc_ata);
             if let Ok(balance) = usdc_balance {
