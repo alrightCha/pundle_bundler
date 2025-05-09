@@ -10,6 +10,7 @@ const DARK: &str = "8BtoThi2ZoXnF7QQK1Wjmh2JuBw9FjVvhnGMVZ2vpump"; //5
 const TRENCHER: &str = "8ncucXv6U6epZKHPbgaEBcEK399TpHGKCquSt4RnmX4f"; //6
 const NEET: &str = "Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump"; //7
 const GHIBLI: &str = "4TBi66vi32S7J8X1A6eWfaLHYmUXu7CStcEmsJQdpump"; //8
+const MOONPIG: &str = "Ai3eKAWjzKMV8wRwd41nVP83yqfbAVJykhvJVPxspump"; //9
 const PUDGY: &str = "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"; //10
 pub const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; //11
 const CBBTC: &str = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij"; //12
@@ -45,6 +46,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let trencher: Pubkey = Pubkey::from_str(TRENCHER).unwrap();
     let neet: Pubkey = Pubkey::from_str(NEET).unwrap();
     let ghibli: Pubkey = Pubkey::from_str(GHIBLI).unwrap();
+    let moonpig: Pubkey = Pubkey::from_str(MOONPIG).unwrap();
     let pudgy: Pubkey = Pubkey::from_str(PUDGY).unwrap();
     let cbbtc: Pubkey = Pubkey::from_str(CBBTC).unwrap();
     let ufd: Pubkey = Pubkey::from_str(UFD).unwrap();
@@ -70,7 +72,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
-        usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, pudgy, cbbtc, ufd,
+        usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, pudgy, cbbtc, ufd,
         retardio, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino, jup,
         ox, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]
