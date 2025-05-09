@@ -1,8 +1,7 @@
-use anchor_spl::associated_token::get_associated_token_address;
 use reqwest::Client as HttpClient;
 
 use solana_sdk::{
-    address_lookup_table::AddressLookupTableAccount,
+    address_lookup_table::{self, AddressLookupTableAccount},
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -10,20 +9,19 @@ use solana_sdk::{
 };
 
 use super::help::BundleTransactions;
-use crate::jito::jito::JitoBundle;
 use crate::params::KeypairWithAmount;
 use crate::pumpfun::pump::PumpFun;
 use crate::solana::lut::create_lut;
-use crate::solana::utils::validate_delayed_txs;
 use crate::warmup::token_manager::TokenManager;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, ORCHESTRATOR_URL, RPC_URL},
     solana::utils::get_admin_keypair,
 };
+use crate::{jito::jito::JitoBundle, solana::utils::build_transaction};
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::address_lookup_table::state::AddressLookupTable;
-use std::{sync::Arc, thread::sleep};
+use std::{collections::HashSet, sync::Arc, thread::sleep};
 use tokio::time::Duration;
 
 pub async fn process_bundle(
@@ -114,12 +112,27 @@ pub async fn process_bundle(
         .shadow_bundle(&address_lookup_table_account)
         .await;
 
+    let clean_keypairs: Vec<Keypair> = keypairs_with_amount
+        .iter()
+        .map(|kp| kp.keypair.insecure_clone())
+        .collect();
+
+    let clean_kps: Vec<Keypair> = keypairs_with_amount
+        .iter()
+        .map(|kp| kp.keypair.insecure_clone())
+        .collect();
+
+    let dev = dev_keypair_with_amount.keypair.insecure_clone();
+    let dev_clone = dev.insecure_clone();
+    let admin = get_admin_keypair();
+    let mint_clone = mint.insecure_clone();
+
     //Step 5: Prepare mint instruction and buy instructions as well as tip instruction
     let mut txs_builder: BundleTransactions = BundleTransactions::new(
         admin_kp,
         dev_keypair_with_amount.keypair,
         mint,
-        address_lookup_table_account,
+        address_lookup_table_account.clone(),
         keypairs_with_amount,
         tip_account,
         with_delay,
@@ -132,7 +145,6 @@ pub async fn process_bundle(
         txs_builder.collect_first_bundle_txs(token_metadata).await;
 
     let delayed_bundle_ixs: Vec<Vec<Instruction>> = txs_builder.collect_rest_txs().await;
-    let first_txs = txs_builder.get_txs(&first_bundle, true);
 
     if txs_builder.has_delayed_bundle() {
         let mint_pubkey = mint.pubkey();
@@ -140,7 +152,7 @@ pub async fn process_bundle(
         let payer: Arc<Keypair> = Arc::new(admin_kp);
         let pumpfun_client = PumpFun::new(payer);
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
-
+        let lut = address_lookup_table_account.clone();
         tokio::spawn(async move {
             let start_time = std::time::Instant::now();
 
@@ -154,7 +166,15 @@ pub async fn process_bundle(
                 if let Ok(dev_balance) = dev_balance {
                     if let Some(dev_bal) = dev_balance.ui_amount {
                         if dev_bal > 0.0 {
-                            let late_txs = txs_builder.get_txs(&delayed_bundle_ixs, false);
+                            let late_txs = get_txs(
+                                &delayed_bundle_ixs,
+                                &admin.insecure_clone(),
+                                &dev.insecure_clone(),
+                                &mint_clone.insecure_clone(),
+                                &clean_keypairs,
+                                lut.clone(),
+                                false,
+                            );
                             let late_txs_chunks: Vec<Vec<VersionedTransaction>> =
                                 late_txs.chunks(5).map(|c| c.to_vec()).collect();
                             print!("We received {:?} late bundles", late_txs_chunks.len());
@@ -175,31 +195,37 @@ pub async fn process_bundle(
         });
     }
 
-       // Submit first bundle with retries
-       let mut success = false;
-       for retry in 1..=3 {
-           match jito
-               .submit_bundle(first_txs.clone(), mint.pubkey(), Some(&pumpfun_client))
-               .await
-           {
-               Ok(_) => {
-                   success = true;
-                   break;
-               }
-               Err(error) => {
-                   println!("Error submitting first bundle, retry {}/3", retry);
-                   println!("Error: {}", error.to_string());
-                   if retry < 3 {
-                       sleep(Duration::from_secs(1));
-                   }
-               }
-           }
-       }
-   
-       if !success {
-           println!("Failed to submit first bundle after 3 retries");
-       }
+    let client = RpcClient::new(RPC_URL);
+    let admin = get_admin_keypair();
 
+    // Submit first bundle with retries
+    loop {
+        let first_txs = get_txs(
+            &first_bundle,
+            &admin.insecure_clone(),
+            &dev_clone,
+            &mint.insecure_clone(),
+            &clean_kps,
+            address_lookup_table_account.clone(),
+            true,
+        );
+
+        let _ = jito
+            .submit_bundle(first_txs.clone(), mint.pubkey(), Some(&pumpfun_client))
+            .await;
+
+        let dev_balance = client.get_token_account_balance(&dev_ata_pubkey);
+
+        if let Ok(dev_balance) = dev_balance {
+            if let Some(dev_bal) = dev_balance.ui_amount {
+                if dev_bal > 0.0 {
+                    break;
+                } else {
+                    sleep(Duration::from_secs(1));
+                }
+            }
+        }
+    }
 
     println!("Making callback to orchestrator...");
     // Fire and forget the callback
@@ -222,4 +248,75 @@ pub async fn process_bundle(
     println!("Bundle completed");
     println!("Bundle lut: {:?}", lut_pubkey);
     Ok(lut_pubkey)
+}
+
+pub fn get_txs(
+    ixs: &Vec<Vec<Instruction>>,
+    admin_keypair: &Keypair,
+    dev_keypair: &Keypair,
+    mint_keypair: &Keypair,
+    keypairs_to_treat: &Vec<Keypair>,
+    address_lookup_table: AddressLookupTableAccount,
+    with_dev: bool,
+) -> Vec<VersionedTransaction> {
+    let client = RpcClient::new(RPC_URL);
+    let mut txs: Vec<VersionedTransaction> = Vec::new();
+    for (index, ix) in ixs.iter().enumerate() {
+        let mut payer = admin_keypair;
+        if with_dev && index == 0 {
+            payer = &dev_keypair;
+        }
+
+        let signers = get_signers(
+            &ix,
+            keypairs_to_treat,
+            dev_keypair,
+            mint_keypair,
+            admin_keypair,
+        );
+        let tx = build_transaction(
+            &client,
+            &ix,
+            signers.iter().collect(),
+            address_lookup_table.clone(),
+            payer,
+        );
+        let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
+        println!("TX SIZE: {:?}, instruction count: {:?}", size, ixs.len());
+        // - 1 for create + - 1 for fee in others, if more -> jito tip ix
+        txs.push(tx);
+    }
+
+    txs
+}
+
+fn get_signers(
+    ixs: &Vec<Instruction>,
+    keypairs_to_treat: &Vec<Keypair>,
+    dev_keypair: &Keypair,
+    mint_keypair: &Keypair,
+    admin_keypair: &Keypair,
+) -> Vec<Keypair> {
+    let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
+
+    for ix in ixs {
+        for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
+            maybe_ix_unique_signers.insert(acc.pubkey);
+        }
+    }
+
+    let mut all_ixs_signers: Vec<Keypair> = Vec::new();
+
+    for signer in maybe_ix_unique_signers {
+        if let Some(kp) = keypairs_to_treat.iter().find(|kp| kp.pubkey() == signer) {
+            all_ixs_signers.push(kp.insecure_clone());
+        } else if signer == dev_keypair.pubkey() {
+            all_ixs_signers.push(dev_keypair.insecure_clone());
+        } else if signer == mint_keypair.pubkey() {
+            all_ixs_signers.push(mint_keypair.insecure_clone());
+        } else if signer == admin_keypair.pubkey() {
+            all_ixs_signers.push(admin_keypair.insecure_clone());
+        }
+    }
+    all_ixs_signers
 }

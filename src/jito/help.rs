@@ -265,64 +265,6 @@ impl BundleTransactions {
         // In total we can get 23 buys + dev buy for first bundle
     }
 
-    pub fn get_txs(
-        &self,
-        ixs: &Vec<Vec<Instruction>>,
-        with_dev: bool,
-    ) -> Vec<VersionedTransaction> {
-        let mut txs: Vec<VersionedTransaction> = Vec::new();
-        for (index, ix) in ixs.iter().enumerate() {
-            let mut payer = &self.admin_keypair;
-            if with_dev && index == 0 {
-                payer = &self.dev_keypair;
-            }
-
-            let signers = self.get_signers(&ix);
-            let tx = build_transaction(
-                &self.client,
-                &ix,
-                signers.iter().collect(),
-                self.address_lookup_table_account.clone(),
-                payer,
-            );
-            let size: usize = bincode::serialized_size(&tx).unwrap() as usize;
-            println!("TX SIZE: {:?}, instruction count: {:?}", size, ixs.len());
-            // - 1 for create + - 1 for fee in others, if more -> jito tip ix
-            txs.push(tx);
-        }
-
-        txs
-    }
-
-    fn get_signers(&self, ixs: &Vec<Instruction>) -> Vec<Keypair> {
-        let mut maybe_ix_unique_signers: HashSet<Pubkey> = HashSet::new();
-
-        for ix in ixs {
-            for acc in ix.accounts.iter().filter(|acc| acc.is_signer) {
-                maybe_ix_unique_signers.insert(acc.pubkey);
-            }
-        }
-
-        let mut all_ixs_signers: Vec<Keypair> = Vec::new();
-
-        for signer in maybe_ix_unique_signers {
-            if let Some(kp) = self
-                .keypairs_to_treat
-                .iter()
-                .find(|kp| kp.keypair.pubkey() == signer)
-            {
-                all_ixs_signers.push(kp.keypair.insecure_clone());
-            } else if signer == self.dev_keypair.pubkey() {
-                all_ixs_signers.push(self.dev_keypair.insecure_clone());
-            } else if signer == self.mint_keypair.pubkey() {
-                all_ixs_signers.push(self.mint_keypair.insecure_clone());
-            } else if signer == self.admin_keypair.pubkey() {
-                all_ixs_signers.push(self.admin_keypair.insecure_clone());
-            }
-        }
-        all_ixs_signers
-    }
-
     async fn get_tip_ix(&self, fee: Option<u64>) -> Instruction {
         if let Some(fee) = fee {
             let tip_ix = self
