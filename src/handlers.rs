@@ -5,6 +5,7 @@ use crate::params::{
     SellAllRequest, SellResponse, UniqueSellRequest, WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
+use crate::pumpfun::swap::PumpSwap;
 use crate::pumpfun::utils::get_splits;
 use crate::solana::bump::Bump;
 use crate::solana::recursive_pay::recursive_pay;
@@ -221,8 +222,9 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
 
         let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
             true => {
-                let swap_ixs = swap_ixs(&keypair, mint_pubkey, Some(amount), None, true).await.unwrap();
-                swap_ixs.0
+                let swap_engine = PumpSwap::new(); 
+                let swap_ixs = swap_engine.sell_ixs(mint_pubkey, keypair.pubkey(), Some(amount), Some(keypair.insecure_clone())).await; 
+                swap_ixs
             }
             false => {
                 let pump_ixs = pumpfun_client

@@ -49,20 +49,25 @@ impl PumpSwap {
     }
 
     pub fn wrap_admin_sol(&self, total_amount: u64) -> Vec<Instruction> {
-        let mut ixs: Vec<Instruction> = Vec::new(); 
-        let ata = get_associated_token_address(&self.admin.pubkey(), &ID); 
+        let mut ixs: Vec<Instruction> = Vec::new();
+        let ata = get_associated_token_address(&self.admin.pubkey(), &ID);
         if self.client.get_account(&ata).is_err() {
-            let create_ata_ix =
-                create_associated_token_account(&self.admin.pubkey(), &self.admin.pubkey(), &ID, &SplID);
+            let create_ata_ix = create_associated_token_account(
+                &self.admin.pubkey(),
+                &self.admin.pubkey(),
+                &ID,
+                &SplID,
+            );
             ixs.push(create_ata_ix);
         }
         let transfer_ix = system_instruction::transfer(&self.admin.pubkey(), &ata, total_amount);
         let sync_ix = sync_native(&SplID, &ata).unwrap();
-        ixs.push(transfer_ix); 
-        ixs.push(sync_ix); 
-        ixs 
+        ixs.push(transfer_ix);
+        ixs.push(sync_ix);
+        ixs
     }
 
+    //TODO: Maybe last buy doesn't pass because total wsol holding is not enough. Double-check with some tests
     pub async fn buy_ixs(
         &self,
         mint: Pubkey,
@@ -70,6 +75,9 @@ impl PumpSwap {
         slippage_bps: Option<u64>,
     ) -> Vec<Instruction> {
         let mut ixs: Vec<Instruction> = Vec::new();
+
+        let base_ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &ID);
+        let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &mint); // mint ata for admin
 
         let buy_amount_with_slippage =
             Self::calculate_with_slippage(amount, slippage_bps.unwrap_or(200));
@@ -89,14 +97,11 @@ impl PumpSwap {
                 _max_quote_amount_in: amount,
             };
 
-            // data.extend_from_slice(&buy_amount_with_slippage.to_le_bytes()); //Buy in amount
-            //data.extend_from_slice(&amount.to_le_bytes()); //Max buy amount
-
-            let base_ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &ID);
-            let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &mint); // mint ata for admin
-
             if let Err(err) = self.client.get_account(&ata) {
-                println!("Received error when trying to find ata for mint on admin keypair: {:?}", err);
+                println!(
+                    "Received error when trying to find ata for mint on admin keypair: {:?}",
+                    err
+                );
                 let create_ata_ix = create_associated_token_account(
                     &self.admin.pubkey(),
                     &self.admin.pubkey(),
@@ -134,15 +139,37 @@ impl PumpSwap {
         ixs
     }
 
-    pub async fn sell_ixs(&self, mint: Pubkey, recipient: Pubkey) -> Vec<Instruction> {
+    pub async fn sell_ixs(
+        &self,
+        mint: Pubkey,
+        recipient: Pubkey,
+        amount: Option<u64>,
+        seller: Option<Keypair>,
+    ) -> Vec<Instruction> {
         let mut ixs: Vec<Instruction> = Vec::new();
+        let mut seller_pubkey = Pubkey::default();
 
-        let admin_ata = get_associated_token_address(&self.admin.pubkey(), &mint);
-        let admin_balance = get_ata_balance(&self.client, &self.admin.insecure_clone(), &mint)
-            .await
-            .unwrap();
+        let (signer, signer_ata) = match seller {
+            Some(seller_kp) => {
+                seller_pubkey = seller_kp.pubkey();
+                (
+                    seller_kp.insecure_clone(),
+                    get_associated_token_address(&seller_kp.pubkey(), &mint),
+                )
+            }
+            None => (
+                self.admin.insecure_clone(),
+                get_associated_token_address(&self.admin.pubkey(), &mint),
+            ),
+        };
 
-        let swap_info = self.get_swap_info(&mint, &admin_balance, false).await;
+        let mut signer_balance = get_ata_balance(&self.client, &signer, &mint).await.unwrap();
+
+        if let Some(amount) = amount {
+            signer_balance = amount;
+        }
+
+        let swap_info = self.get_swap_info(&mint, &signer_balance, false).await;
 
         if let Some(swap_info) = swap_info {
             //Add create ATA for WSOL IX
@@ -150,14 +177,14 @@ impl PumpSwap {
 
             if let Err(_) = self.client.get_account(&ata) {
                 let create_ata_ix =
-                    create_associated_token_account(&self.admin.pubkey(), &recipient, &ID, &SplID);
+                    create_associated_token_account(&signer.pubkey(), &recipient, &ID, &SplID);
                 ixs.push(create_ata_ix);
 
                 let min_received_with_slippage =
                     Self::calculate_with_slippage(swap_info.amount_out, 100);
 
                 let sell_data = Sell {
-                    _base_amount_in: admin_balance,
+                    _base_amount_in: signer_balance,
                     _min_quote_amount_out: min_received_with_slippage,
                 };
 
@@ -166,11 +193,11 @@ impl PumpSwap {
                     &sell_data.data(),
                     vec![
                         AccountMeta::new_readonly(swap_info.pool_id, false), // Pool id
-                        AccountMeta::new(self.admin.pubkey(), true),         // ADMIN as signer
+                        AccountMeta::new(signer.pubkey(), true),             // Signer
                         AccountMeta::new_readonly(PUMP_GLOBAL, false),       //GLOBAL
                         AccountMeta::new_readonly(mint, false),              //MINT
                         AccountMeta::new_readonly(ID, false),                //WSOL
-                        AccountMeta::new(admin_ata, false),                  //MINT ADMIN ATA
+                        AccountMeta::new(signer_ata, false),                 //MINT SIGNER ATA
                         AccountMeta::new(ata, false),                        //WSOL RECIPIENT ATA
                         AccountMeta::new(swap_info.pool_base, false),
                         AccountMeta::new(swap_info.pool_quote, false),
@@ -185,6 +212,19 @@ impl PumpSwap {
                     ],
                 );
                 ixs.push(sell_ix);
+            }
+
+            //Add sell tax instruction if seller pubkey has been registered 
+            let tax_amount = swap_info.amount_out * 5 / 100;
+
+            if seller_pubkey != Pubkey::default() {
+                let tax_ix = system_instruction::transfer(
+                    &seller_pubkey,
+                    &self.admin.pubkey(), // Send to admin public key
+                    tax_amount,
+                );
+    
+                ixs.push(tax_ix);
             }
         }
 

@@ -89,39 +89,19 @@ impl TokenManager {
             buy_ixs.extend(ixs);
         }
 
-        loop {
-            let jito_result = self.build_send_bundle(buy_ixs.clone(), lut).await;
-            let confirmed = self.get_usdc_balance(true);
-            if confirmed {
-                break;
-            }
-            if let Err(_) = jito_result {
-                println!("Error submitting tx to buy token. Resubmitting...");
-                sleep(Duration::from_secs(3));
-            }
-        }
+        self.build_send_bundle(buy_ixs.clone(), lut).await;
 
         for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
                 let ixs = self
                     .swap_provider
-                    .sell_ixs(swap_info.mint, keypair.pubkey())
+                    .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
                     .await;
                 sell_ixs.extend(ixs);
             }
         }
 
-        loop {
-            let jito_result = self.build_send_bundle(sell_ixs.clone(), lut).await;
-            let confirmed = self.get_usdc_balance(false); 
-            if confirmed{
-                break; 
-            }
-            if let Err(_) = jito_result {
-                println!("Error submitting tx to buy token. Resubmitting...");
-                sleep(Duration::from_secs(3));
-            }
-        }
+        self.build_send_bundle(sell_ixs.clone(), lut).await;
 
         //transfer WSOL to hop pubkey, unwrap by setting buyer keypair as recipient
         for (_, keypair) in self.pubkey_to_keypair.iter() {
@@ -175,8 +155,8 @@ impl TokenManager {
                     .insert(hop_keypair.pubkey(), hop_keypair);
             }
         }
-        let mut total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
-        total = total * 120 / 100;
+
+        let total: u64 = wallets.iter().map(|wallet| wallet.amount.clone()).sum();
         let priority_fee_amount = 500_000; // 0.0005 SOL
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
         let funding_ix = self.swap_provider.wrap_admin_sol(total);
@@ -251,11 +231,7 @@ impl TokenManager {
         false
     }
 
-    async fn build_send_bundle(
-        &self,
-        ixs: Vec<Instruction>,
-        lut: &AddressLookupTableAccount,
-    ) -> Result<(), anyhow::Error> {
+    async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
 
         let mut transactions: Vec<VersionedTransaction> = Vec::new();
@@ -365,10 +341,24 @@ impl TokenManager {
             }
         }
 
-        let result = jito
-            .process_bundle(transactions, Pubkey::default(), None)
-            .await;
-        result
+        let txs_chunks: Vec<Vec<VersionedTransaction>> =
+            transactions.chunks(5).map(|c| c.to_vec()).collect();
+
+        print!("We received {:?} buy bundles", txs_chunks.len());
+
+        for chunk in txs_chunks {
+            loop {
+                let result = jito
+                    .submit_bundle(chunk.clone(), Pubkey::default(), None)
+                    .await;
+                if let Ok(_) = result {
+                    break;
+                } else {
+                    sleep(Duration::from_secs(2));
+                    println!("Retrying buy bundle");
+                }
+            }
+        }
     }
 
     fn close_admin_wsol(&self) {

@@ -68,15 +68,15 @@ pub async fn create_lut(
     first.extend(extend_ixs); //With split off is only 1 ix
 
     // First transaction creates the LUT
-    let create_tx =
-        Transaction::new_signed_with_payer(&first, Some(&payer.pubkey()), &[payer], blockhash);
+    loop {
+        let create_tx =
+            Transaction::new_signed_with_payer(&first, Some(&payer.pubkey()), &[payer], blockhash);
 
-    let size: usize = bincode::serialized_size(&create_tx).unwrap() as usize;
+        let size: usize = bincode::serialized_size(&create_tx).unwrap() as usize;
 
-    println!("Create lut tx size: {:?}", size);
+        println!("Create lut tx size: {:?}", size);
 
-    client
-        .send_and_confirm_transaction_with_spinner_and_config(
+        let signature = client.send_and_confirm_transaction_with_spinner_and_config(
             &create_tx,
             CommitmentConfig::finalized(),
             RpcSendTransactionConfig {
@@ -84,20 +84,27 @@ pub async fn create_lut(
                 preflight_commitment: Some(CommitmentLevel::Processed),
                 ..RpcSendTransactionConfig::default()
             },
-        )
-        .unwrap();
+        );
+        if let Ok(signature) = signature {
+            println!("LUT Created successfully: {:?}", signature);
+            break;
+        } else {
+            sleep(Duration::from_secs(1));
+            println!("Create LUT not executed on-chain. Retrying..");
+        }
+    }
 
     // Send extend transactions
     for extend_ix in rest {
-        let extend_tx = Transaction::new_signed_with_payer(
-            &[priority_fee_ix.clone(), extend_ix],
-            Some(&payer.pubkey()),
-            &[payer],
-            blockhash,
-        );
+        loop {
+            let extend_tx = Transaction::new_signed_with_payer(
+                &[priority_fee_ix.clone(), extend_ix.clone()],
+                Some(&payer.pubkey()),
+                &[payer],
+                blockhash,
+            );
 
-        client
-            .send_and_confirm_transaction_with_spinner_and_config(
+            let signature = client.send_and_confirm_transaction_with_spinner_and_config(
                 &extend_tx,
                 CommitmentConfig::finalized(),
                 RpcSendTransactionConfig {
@@ -105,8 +112,15 @@ pub async fn create_lut(
                     preflight_commitment: Some(CommitmentLevel::Processed),
                     ..RpcSendTransactionConfig::default()
                 },
-            )
-            .unwrap();
+            );
+
+            if let Ok(signature) = signature {
+                println!("LUT Extended {:?}", signature);
+                break;
+            } else {
+                sleep(Duration::from_secs(2));
+            }
+        }
     }
 
     Ok(lut_pubkey)
@@ -192,22 +206,7 @@ pub fn close_lut(client: &RpcClient, authority: &Keypair, lut_pubkey: Pubkey) {
 
     let ix = close_lookup_table(lut_pubkey, authority_pubkey, authority_pubkey);
 
-    let extend_lut_blockheight: (Hash, u64) = client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .unwrap();
-
     let tx = send_transaction(&client, blockhash, authority, &[ix]).unwrap();
 
     client.confirm_transaction(&tx).unwrap();
-
-    loop {
-        let last_hash: u64 = client
-            .get_block_height_with_commitment(CommitmentConfig::finalized())
-            .unwrap();
-        if last_hash > extend_lut_blockheight.1 + 2 {
-            break;
-        } else {
-            sleep(Duration::from_secs(1));
-        }
-    }
 }

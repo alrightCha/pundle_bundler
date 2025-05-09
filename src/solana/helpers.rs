@@ -1,7 +1,8 @@
-use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL};
+use crate::config::{JITO_TIP_AMOUNT, MAX_RETRIES};
 use crate::jito::jito::JitoBundle;
-use crate::jupiter::swap::{sol_for_tokens, swap_ixs};
+use crate::jupiter::swap::sol_for_tokens;
 use crate::pumpfun::pump::PumpFun;
+use crate::pumpfun::swap::PumpSwap;
 use crate::solana::utils::{build_transaction, test_transactions};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -66,13 +67,9 @@ pub async fn sell_all_txs(
     //BUILD INSTRUCTIONS
 
     let token_bonded = pumpfun_client
-
         .get_pool_information(mint_pubkey)
-
         .await
-
         .unwrap()
-
         .is_bonding_curve_complete;
 
     let mut ixs: Vec<Instruction> = Vec::new();
@@ -85,10 +82,11 @@ pub async fn sell_all_txs(
 
         let new_ixs: Option<Vec<Instruction>> = match token_bonded {
             true => {
-                let swap_ixs = swap_ixs(&keypair, *mint_pubkey, None, None, true)
-                    .await
-                    .unwrap();
-                Some(swap_ixs.0)
+                let swap_engine = PumpSwap::new();
+                let sell_ixs = swap_engine
+                    .sell_ixs(*mint_pubkey, keypair.pubkey(), None, Some(keypair.insecure_clone()))
+                    .await;
+                Some(sell_ixs)
             }
             false => {
                 let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;
@@ -222,7 +220,7 @@ pub async fn sell_all_txs(
             tips_count += 1;
         }
     }
-    
+
     print!(
         "Sending {:?} sell transactions with {:?} tip instructions",
         transactions.len(),
