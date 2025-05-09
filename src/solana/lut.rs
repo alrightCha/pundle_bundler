@@ -52,6 +52,9 @@ pub async fn create_lut(
     payer: &Keypair,
     addresses: &Vec<Pubkey>,
 ) -> Result<Pubkey> {
+    // Take only first 230 addresses
+    let addresses_to_use: Vec<Pubkey> = addresses.iter().take(230).copied().collect();
+
     // Get current slot and blockhash
     let (slot, blockhash) = get_slot_and_blockhash(&client).unwrap();
 
@@ -59,7 +62,7 @@ pub async fn create_lut(
     let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(50_000);
     let (create_ix, lut_pubkey) = create_lookup_table(payer.pubkey(), payer.pubkey(), slot);
 
-    let mut extend_ixs = extend_lut(payer, lut_pubkey, addresses);
+    let mut extend_ixs = extend_lut(payer, lut_pubkey, &addresses_to_use);
 
     let rest = extend_ixs.split_off(1);
 
