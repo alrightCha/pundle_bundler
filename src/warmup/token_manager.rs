@@ -12,7 +12,10 @@ use anchor_spl::{
     token::spl_token::{native_mint::ID, ID as SplID},
 };
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::message::v0::Message;
+use solana_sdk::message::VersionedMessage;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
@@ -229,6 +232,10 @@ impl TokenManager {
     }
 
     async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
+        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
+
+        let mut transactions: Vec<VersionedTransaction> = Vec::new();
+
         let mut current_tx_ixs: Vec<Instruction> = Vec::new();
         let admin_signer = self.admin.insecure_clone();
         let signers = &vec![&admin_signer];
@@ -257,49 +264,90 @@ impl TokenManager {
                 let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
                 new_ixs.push(priority_fee_ix);
                 new_ixs.push(ix.clone());
-                loop {
-                    let tx = build_transaction(
-                        &self.client,
-                        &current_tx_ixs,
-                        signers.clone(),
-                        lut.clone(),
-                        &self.admin,
-                    );
+                if transactions.len() % 5 == 4 {
+                    let mut maybe_with_tip: Vec<Instruction> = Vec::new();
+                    for ix in current_tx_ixs.iter() {
+                        maybe_with_tip.push(ix.clone());
+                    }
+                    let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+                    maybe_with_tip.push(tip_ix.clone());
+                    let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
 
-                    let sig = self.client.send_and_confirm_transaction(&tx);
-
-                    if let Ok(sig) = sig {
-                        println!("Transaction successful: {:?}", sig);
-                        break;
-                    } else {
-                        println!("Not successful, retrying...");
-                        sleep(Duration::from_secs(2));
+                    if size > 1232 {
+                        let revert_ix = current_tx_ixs.pop();
+                        if let Some(revert_ix) = revert_ix {
+                            new_ixs.push(revert_ix);
+                        }
+                        current_tx_ixs.push(tip_ix);
                     }
                 }
-                current_tx_ixs = new_ixs;
-            }
-        }
-
-        if current_tx_ixs.len() > 0 {
-            loop {
-                let last_tx = build_transaction(
+                let tx = build_transaction(
                     &self.client,
                     &current_tx_ixs,
                     signers.clone(),
                     lut.clone(),
                     &self.admin,
                 );
-
-                let sig = self.client.send_and_confirm_transaction(&last_tx);
-
-                if let Ok(sig) = sig {
-                    println!("Transaction successful: {:?}", sig);
-                    break;
-                } else {
-                    println!("Not successful, retrying...");
-                    sleep(Duration::from_secs(2));
-                }
+                transactions.push(tx);
+                current_tx_ixs = new_ixs;
             }
+        }
+
+        if current_tx_ixs.len() > 0 {
+            let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
+            let mut maybe_ixs: Vec<Instruction> = Vec::new();
+            for ix in current_tx_ixs.iter() {
+                maybe_ixs.push(ix.clone());
+            }
+            maybe_ixs.push(tip_ix.clone());
+
+            let one_tx = build_transaction(
+                &self.client,
+                &maybe_ixs,
+                signers.clone(),
+                lut.clone(),
+                &self.admin,
+            );
+            let size: usize = bincode::serialized_size(&one_tx).unwrap() as usize;
+
+            if size > 1232 {
+                let first_tx = build_transaction(
+                    &self.client,
+                    &current_tx_ixs,
+                    signers.clone(),
+                    lut.clone(),
+                    &self.admin,
+                );
+                let tip_tx = build_transaction(
+                    &self.client,
+                    &vec![tip_ix],
+                    signers.clone(),
+                    lut.clone(),
+                    &self.admin,
+                );
+
+                if transactions.len() % 5 < 4 {
+                    //Add 2 txs
+                    transactions.push(first_tx);
+                    transactions.push(tip_tx);
+                } else {
+                    //Add 3 txs
+                    transactions.push(tip_tx.clone());
+                    transactions.push(first_tx);
+                    transactions.push(tip_tx);
+                }
+            } else {
+                transactions.push(one_tx);
+            }
+        }
+
+        let txs_chunks: Vec<Vec<VersionedTransaction>> =
+            transactions.chunks(5).map(|c| c.to_vec()).collect();
+
+        print!("We received {:?} buy bundles", txs_chunks.len());
+
+        for chunk in txs_chunks {
+            let _ = jito.submit_bundle(chunk, Pubkey::default(), None).await;
         }
     }
 
