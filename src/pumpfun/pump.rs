@@ -533,7 +533,7 @@ impl PumpFun {
     }
 
     fn calculate_with_slippage(amount: u64, basis_points: u64) -> u64 {
-        let res = amount - (amount * basis_points) / 10000;
+        let res = amount - (amount / 10000 * basis_points);
         res
     }
 }

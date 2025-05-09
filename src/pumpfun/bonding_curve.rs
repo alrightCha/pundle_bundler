@@ -139,6 +139,11 @@ mod tests {
 
     #[test]
     fn test_bonding_curve_account() {
+        let amount = 300000000;
+        // Multiply first by 300 could overflow u64 since 300000000 * 300 > u64::MAX
+        // Instead divide first to reduce intermediate value
+        let res = amount - (amount / 10000 * 300);
+        println!("Resp: {:?}", res); 
         let mut bonding_curve: BondingCurveAccount = get_bonding_curve();
 
         let buys = [50000000];
