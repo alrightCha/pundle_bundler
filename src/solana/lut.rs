@@ -52,8 +52,9 @@ pub async fn create_lut(
     payer: &Keypair,
     addresses: &Vec<Pubkey>,
 ) -> Result<Pubkey> {
+    println!("Addresses to extend with count: {:?}", addresses); 
     // Take only first 230 addresses
-    let addresses_to_use: Vec<Pubkey> = addresses.iter().take(230).copied().collect();
+    let addresses_to_use: Vec<Pubkey> = addresses.iter().take(240).copied().collect();
 
     // Get current slot and blockhash
     let (slot, blockhash) = get_slot_and_blockhash(&client).unwrap();
@@ -101,7 +102,7 @@ pub async fn create_lut(
     for extend_ix in rest {
         let mut retries = 0;
         const MAX_RETRIES: u32 = 10;
-        
+        let blockhash = client.get_latest_blockhash().unwrap(); 
         loop {
             let extend_tx = Transaction::new_signed_with_payer(
                 &[priority_fee_ix.clone(), extend_ix.clone()],
@@ -146,7 +147,7 @@ fn extend_lut(
     println!("Addresses count: {:?}", addresses.len());
     let mut instructions: Vec<Instruction> = Vec::new();
 
-    let chunks: Vec<_> = addresses.chunks(27).collect();
+    let chunks: Vec<_> = addresses.chunks(25).collect();
 
     for chunk in chunks {
         let ix = extend_lookup_table(
