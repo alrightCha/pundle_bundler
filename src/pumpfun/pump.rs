@@ -147,7 +147,7 @@ impl PumpFun {
         println!("Amount sol: {}", amount_sol); 
         let buy_amount_with_slippage =
             Self::calculate_with_slippage(amount_sol, slippage_basis_points.unwrap_or(500));
-        println!("Buy amount with slippage: {:?", buy_amount_with_slippage); 
+        println!("Buy amount with slippage: {:?}", buy_amount_with_slippage); 
         let buy_amount = match with_stimulate {
             true => self
                 .bonding_curve
