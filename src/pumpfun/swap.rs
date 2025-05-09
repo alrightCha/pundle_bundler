@@ -80,7 +80,7 @@ impl PumpSwap {
         let ata: Pubkey = get_associated_token_address(&self.admin.pubkey(), &mint); // mint ata for admin
 
         let buy_amount_with_slippage =
-            Self::calculate_with_slippage(amount, slippage_bps.unwrap_or(200));
+            Self::calculate_with_slippage(amount, slippage_bps.unwrap_or(400));
 
         let swap_info = self
             .get_swap_info(&mint, &buy_amount_with_slippage, true)
@@ -181,7 +181,7 @@ impl PumpSwap {
                 ixs.push(create_ata_ix);
 
                 let min_received_with_slippage =
-                    Self::calculate_with_slippage(swap_info.amount_out, 100);
+                    Self::calculate_with_slippage(swap_info.amount_out, 300);
 
                 let sell_data = Sell {
                     _base_amount_in: signer_balance,
