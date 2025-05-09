@@ -96,6 +96,9 @@ pub async fn create_lut(
 
     // Send extend transactions
     for extend_ix in rest {
+        let mut retries = 0;
+        const MAX_RETRIES: u32 = 10;
+        
         loop {
             let extend_tx = Transaction::new_signed_with_payer(
                 &[priority_fee_ix.clone(), extend_ix.clone()],
@@ -118,6 +121,11 @@ pub async fn create_lut(
                 println!("LUT Extended {:?}", signature);
                 break;
             } else {
+                retries += 1;
+                if retries >= MAX_RETRIES {
+                    println!("Failed to extend LUT after {} retries", MAX_RETRIES);
+                    return Err(anyhow::anyhow!("Failed to extend LUT after max retries"));
+                }
                 sleep(Duration::from_secs(2));
             }
         }
