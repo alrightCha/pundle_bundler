@@ -75,54 +75,30 @@ impl TokenManager {
         let usdc = Pubkey::from_str(USDC).unwrap();
         let usdc_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
 
-        loop {
-            //Make admin swaps to tokens
-            let mut buy_ixs: Vec<Instruction> = Vec::new();
-            for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
-                let ixs = self
-                    .swap_provider
-                    .buy_ixs(swap_info.mint, swap_info.amount, None)
-                    .await;
-                buy_ixs.extend(ixs);
-            }
-            let _ = self.build_send_bundle(buy_ixs.clone(), lut).await;
-            let usdc_balance = self.client.get_token_account_balance(&usdc_ata);
-            if let Ok(balance) = usdc_balance {
-                if let Some(ui_amount) = balance.ui_amount {
-                    if ui_amount > 0.0 {
-                        break;
-                    } else {
-                        sleep(Duration::from_secs(3));
-                    }
-                }
-            }
+        //Make admin swaps to tokens
+        let mut buy_ixs: Vec<Instruction> = Vec::new();
+        for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
+            let ixs = self
+                .swap_provider
+                .buy_ixs(swap_info.mint, swap_info.amount, None)
+                .await;
+            buy_ixs.extend(ixs);
         }
+        let _ = self.build_send_bundle(buy_ixs.clone(), lut).await;
 
         sleep(Duration::from_secs(30));
-
-        loop {
-            let mut sell_ixs: Vec<Instruction> = Vec::new();
-            for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
-                if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
-                    let ixs = self
-                        .swap_provider
-                        .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
-                        .await;
-                    sell_ixs.extend(ixs);
-                }
-            }
-            let _ = self.build_send_bundle(sell_ixs.clone(), lut).await;
-            let usdc_balance = self.client.get_token_account_balance(&usdc_ata);
-            if let Ok(balance) = usdc_balance {
-                if let Some(ui_amount) = balance.ui_amount {
-                    if ui_amount > 0.0 {
-                        sleep(Duration::from_secs(3));
-                    } else {
-                        break;
-                    }
-                }
+        let mut sell_ixs: Vec<Instruction> = Vec::new();
+        for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
+            if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
+                let ixs = self
+                    .swap_provider
+                    .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
+                    .await;
+                sell_ixs.extend(ixs);
             }
         }
+
+        let _ = self.build_send_bundle(sell_ixs.clone(), lut).await;
 
         //unwrap WSOL for buyers
         for (_, keypair) in self.pubkey_to_keypair.iter() {
@@ -247,10 +223,6 @@ impl TokenManager {
     }
 
     async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
-        let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
-
-        let mut transactions: Vec<VersionedTransaction> = Vec::new();
-
         let mut current_tx_ixs: Vec<Instruction> = Vec::new();
         let admin_signer = self.admin.insecure_clone();
         let signers = &vec![&admin_signer];
@@ -279,90 +251,49 @@ impl TokenManager {
                 let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
                 new_ixs.push(priority_fee_ix);
                 new_ixs.push(ix.clone());
-                if transactions.len() % 5 == 4 {
-                    let mut maybe_with_tip: Vec<Instruction> = Vec::new();
-                    for ix in current_tx_ixs.iter() {
-                        maybe_with_tip.push(ix.clone());
-                    }
-                    let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
-                    maybe_with_tip.push(tip_ix.clone());
-                    let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+                loop {
+                    let tx = build_transaction(
+                        &self.client,
+                        &current_tx_ixs,
+                        signers.clone(),
+                        lut.clone(),
+                        &self.admin,
+                    );
 
-                    if size > 1232 {
-                        let revert_ix = current_tx_ixs.pop();
-                        if let Some(revert_ix) = revert_ix {
-                            new_ixs.push(revert_ix);
-                        }
-                        current_tx_ixs.push(tip_ix);
+                    let sig = self.client.send_and_confirm_transaction(&tx);
+
+                    if let Ok(sig) = sig {
+                        println!("Transaction successful: {:?}", sig);
+                        break;
+                    } else {
+                        println!("Not successful, retrying...");
+                        sleep(Duration::from_secs(2));
                     }
                 }
-                let tx = build_transaction(
-                    &self.client,
-                    &current_tx_ixs,
-                    signers.clone(),
-                    lut.clone(),
-                    &self.admin,
-                );
-                transactions.push(tx);
                 current_tx_ixs = new_ixs;
             }
         }
 
         if current_tx_ixs.len() > 0 {
-            let tip_ix = jito.get_tip_ix(self.admin.pubkey(), None).await.unwrap();
-            let mut maybe_ixs: Vec<Instruction> = Vec::new();
-            for ix in current_tx_ixs.iter() {
-                maybe_ixs.push(ix.clone());
-            }
-            maybe_ixs.push(tip_ix.clone());
-
-            let one_tx = build_transaction(
-                &self.client,
-                &maybe_ixs,
-                signers.clone(),
-                lut.clone(),
-                &self.admin,
-            );
-            let size: usize = bincode::serialized_size(&one_tx).unwrap() as usize;
-
-            if size > 1232 {
-                let first_tx = build_transaction(
+            loop {
+                let last_tx = build_transaction(
                     &self.client,
                     &current_tx_ixs,
                     signers.clone(),
                     lut.clone(),
                     &self.admin,
                 );
-                let tip_tx = build_transaction(
-                    &self.client,
-                    &vec![tip_ix],
-                    signers.clone(),
-                    lut.clone(),
-                    &self.admin,
-                );
 
-                if transactions.len() % 5 < 4 {
-                    //Add 2 txs
-                    transactions.push(first_tx);
-                    transactions.push(tip_tx);
+                let sig = self.client.send_and_confirm_transaction(&last_tx);
+
+                if let Ok(sig) = sig {
+                    println!("Transaction successful: {:?}", sig);
+                    break;
                 } else {
-                    //Add 3 txs
-                    transactions.push(tip_tx.clone());
-                    transactions.push(first_tx);
-                    transactions.push(tip_tx);
+                    println!("Not successful, retrying...");
+                    sleep(Duration::from_secs(2));
                 }
-            } else {
-                transactions.push(one_tx);
             }
-        }
-
-        let txs_chunks: Vec<Vec<VersionedTransaction>> =
-            transactions.chunks(5).map(|c| c.to_vec()).collect();
-
-        print!("We received {:?} buy bundles", txs_chunks.len());
-
-        for chunk in txs_chunks {
-            let _ = jito.submit_bundle(chunk, Pubkey::default(), None).await;
         }
     }
 
