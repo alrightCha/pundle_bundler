@@ -202,17 +202,6 @@ impl TokenManager {
         };
     }
 
-    fn get_usdc_balance(&self, buy: bool) -> bool {
-        let usdc = Pubkey::from_str(USDC).unwrap();
-        let first_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
-        let balance = self.client.get_token_account_balance(&first_ata).unwrap();
-        if let Some(ui_amount) = balance.ui_amount {
-            let balance_not_null = ui_amount > 0.0;
-            return buy == balance_not_null;
-        }
-        false
-    }
-
     async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
         let mut new_ixs: Vec<Instruction> = Vec::new();
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
