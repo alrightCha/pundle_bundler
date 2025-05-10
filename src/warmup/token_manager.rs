@@ -12,9 +12,9 @@ use anchor_spl::{
     token::spl_token::{native_mint::ID, ID as SplID},
 };
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{address_lookup_table::AddressLookupTableAccount, transaction::Transaction};
+use solana_sdk::{compute_budget::ComputeBudgetInstruction, signature::Signature};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer};
 use std::{collections::HashMap, str::FromStr, thread::sleep, time::Duration};
 
@@ -73,21 +73,40 @@ impl TokenManager {
     //TODO: Implement retry here
     pub async fn shadow_bundle(&mut self, lut: &AddressLookupTableAccount) {
         for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
-            let ixs = self
-                .swap_provider
-                .buy_ixs(swap_info.mint, swap_info.amount, None)
-                .await;
-            self.build_send_bundle(ixs, &lut.clone()).await;
+            loop {
+                let ixs = self
+                    .swap_provider
+                    .buy_ixs(swap_info.mint, swap_info.amount, None)
+                    .await;
+                let sig: Result<Signature, solana_client::client_error::ClientError> =
+                    self.build_send_bundle(ixs, &lut.clone()).await;
+                if let Ok(sig) = sig {
+                    println!("Transaction successful: {:?}", sig);
+                    break;
+                } else {
+                    println!("Not successful, retrying...");
+                    sleep(Duration::from_secs(2));
+                }
+            }
         }
 
         sleep(Duration::from_secs(20));
         for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
-                let ixs = self
-                    .swap_provider
-                    .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
-                    .await;
-                self.build_send_bundle(ixs, &lut.clone()).await;
+                loop {
+                    let ixs = self
+                        .swap_provider
+                        .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
+                        .await;
+                    let sig = self.build_send_bundle(ixs, &lut.clone()).await;
+                    if let Ok(sig) = sig {
+                        println!("Transaction successful: {:?}", sig);
+                        break;
+                    } else {
+                        println!("Not successful, retrying...");
+                        sleep(Duration::from_secs(2));
+                    }
+                }
             }
         }
 
@@ -202,30 +221,28 @@ impl TokenManager {
         };
     }
 
-    async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
+    async fn build_send_bundle(
+        &self,
+        ixs: Vec<Instruction>,
+        lut: &AddressLookupTableAccount,
+    ) -> Result<Signature, solana_client::client_error::ClientError> {
         let mut new_ixs: Vec<Instruction> = Vec::new();
         let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
         new_ixs.push(priority_fee_ix);
         new_ixs.extend(ixs.clone());
-        loop {
-            let tx = build_transaction(
-                &self.client,
-                &new_ixs,
-                vec![&self.admin.insecure_clone()],
-                lut.clone(),
-                &self.admin,
-            );
 
-            let sig = self.client.send_and_confirm_transaction(&tx);
+        let tx = build_transaction(
+            &self.client,
+            &new_ixs,
+            vec![&self.admin.insecure_clone()],
+            lut.clone(),
+            &self.admin,
+        );
 
-            if let Ok(sig) = sig {
-                println!("Transaction successful: {:?}", sig);
-                break;
-            } else {
-                println!("Not successful, retrying...");
-                sleep(Duration::from_secs(2));
-            }
-        }
+        let sig: Result<Signature, solana_client::client_error::ClientError> =
+            self.client.send_and_confirm_transaction(&tx);
+
+        sig
     }
 
     fn close_admin_wsol(&self) {
