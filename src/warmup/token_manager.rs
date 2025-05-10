@@ -1,4 +1,4 @@
-use super::spls::{init_mints, USDC};
+use super::spls::init_mints;
 use crate::{
     config::{JITO_TIP_AMOUNT, MAX_RETRIES, RPC_URL},
     jito::jito::JitoBundle,
