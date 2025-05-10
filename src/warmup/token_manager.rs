@@ -72,37 +72,28 @@ impl TokenManager {
 
     //TODO: Implement retry here
     pub async fn shadow_bundle(&mut self, lut: &AddressLookupTableAccount) {
-        let usdc = Pubkey::from_str(USDC).unwrap();
-        let usdc_ata = get_associated_token_address(&self.admin.pubkey(), &usdc);
-
-        //Make admin swaps to tokens
-        let mut buy_ixs: Vec<Instruction> = Vec::new();
         for (_, swap_info) in self.wallet_to_mint_with_amount.iter() {
             let ixs = self
                 .swap_provider
                 .buy_ixs(swap_info.mint, swap_info.amount, None)
                 .await;
-            buy_ixs.extend(ixs);
+            self.build_send_bundle(ixs, &lut.clone()).await;
         }
-        let _ = self.build_send_bundle(buy_ixs.clone(), lut).await;
 
-        sleep(Duration::from_secs(30));
-        let mut sell_ixs: Vec<Instruction> = Vec::new();
+        sleep(Duration::from_secs(20));
         for (wallet, swap_info) in self.wallet_to_mint_with_amount.iter() {
             if let Some(keypair) = self.pubkey_to_keypair.get(wallet) {
                 let ixs = self
                     .swap_provider
                     .sell_ixs(swap_info.mint, keypair.pubkey(), None, None)
                     .await;
-                sell_ixs.extend(ixs);
+                self.build_send_bundle(ixs, &lut.clone()).await;
             }
         }
 
-        let _ = self.build_send_bundle(sell_ixs.clone(), lut).await;
-
         //unwrap WSOL for buyers
         for (_, keypair) in self.pubkey_to_keypair.iter() {
-            self.send_tx(keypair).await;
+            self.close_tx(keypair).await;
         }
         self.close_admin_wsol();
     }
@@ -173,7 +164,7 @@ impl TokenManager {
         );
     }
 
-    async fn send_tx(&self, signer: &Keypair) {
+    async fn close_tx(&self, signer: &Keypair) {
         let priority_fee_amount = 500_000; // 0.0005 SOL
 
         let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
@@ -223,76 +214,27 @@ impl TokenManager {
     }
 
     async fn build_send_bundle(&self, ixs: Vec<Instruction>, lut: &AddressLookupTableAccount) {
-        let mut current_tx_ixs: Vec<Instruction> = Vec::new();
-        let admin_signer = self.admin.insecure_clone();
-        let signers = &vec![&admin_signer];
-
-        for ix in ixs {
-            let mut maybe_ixs: Vec<Instruction> = Vec::new();
-            for cix in current_tx_ixs.iter() {
-                maybe_ixs.push(cix.clone());
-            }
-            maybe_ixs.push(ix.clone());
-
-            let maybe_tx = build_transaction(
+        let mut new_ixs: Vec<Instruction> = Vec::new();
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
+        new_ixs.push(priority_fee_ix);
+        new_ixs.extend(ixs.clone());
+        loop {
+            let tx = build_transaction(
                 &self.client,
-                &maybe_ixs,
-                signers.clone(),
+                &new_ixs,
+                vec![&self.admin.insecure_clone()],
                 lut.clone(),
                 &self.admin,
             );
 
-            let size: usize = bincode::serialized_size(&maybe_tx).unwrap() as usize;
+            let sig = self.client.send_and_confirm_transaction(&tx);
 
-            if size < 1232 {
-                current_tx_ixs.push(ix.clone());
+            if let Ok(sig) = sig {
+                println!("Transaction successful: {:?}", sig);
+                break;
             } else {
-                let mut new_ixs: Vec<Instruction> = Vec::new();
-                let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(200_000);
-                new_ixs.push(priority_fee_ix);
-                new_ixs.push(ix.clone());
-                loop {
-                    let tx = build_transaction(
-                        &self.client,
-                        &current_tx_ixs,
-                        signers.clone(),
-                        lut.clone(),
-                        &self.admin,
-                    );
-
-                    let sig = self.client.send_and_confirm_transaction(&tx);
-
-                    if let Ok(sig) = sig {
-                        println!("Transaction successful: {:?}", sig);
-                        break;
-                    } else {
-                        println!("Not successful, retrying...");
-                        sleep(Duration::from_secs(2));
-                    }
-                }
-                current_tx_ixs = new_ixs;
-            }
-        }
-
-        if current_tx_ixs.len() > 0 {
-            loop {
-                let last_tx = build_transaction(
-                    &self.client,
-                    &current_tx_ixs,
-                    signers.clone(),
-                    lut.clone(),
-                    &self.admin,
-                );
-
-                let sig = self.client.send_and_confirm_transaction(&last_tx);
-
-                if let Ok(sig) = sig {
-                    println!("Transaction successful: {:?}", sig);
-                    break;
-                } else {
-                    println!("Not successful, retrying...");
-                    sleep(Duration::from_secs(2));
-                }
+                println!("Not successful, retrying...");
+                sleep(Duration::from_secs(2));
             }
         }
     }
