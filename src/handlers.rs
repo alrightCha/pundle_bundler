@@ -229,34 +229,22 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
             .await
             .unwrap();
 
-        let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
-            true => {
-                let swap_engine = PumpSwap::new();
-                let swap_ixs = swap_engine
-                    .sell_ixs(
-                        mint_pubkey,
-                        keypair.pubkey(),
-                        Some(amount),
-                        Some(keypair.insecure_clone()),
-                    )
-                    .await;
-                swap_ixs
-            }
-            false => {
-                let pump_ixs = pumpfun_client
-                    .sell_ix(&mint_pubkey, &keypair, Some(amount), None, None)
-                    .await
-                    .unwrap();
-                pump_ixs
-            }
-        };
+        let swap_engine = PumpSwap::new();
+        let swap_ixs = swap_engine
+            .sell_ixs(
+                mint_pubkey,
+                keypair.pubkey(),
+                Some(amount),
+                Some(keypair.insecure_clone()),
+            )
+            .await;
 
         let blockhash = client.get_latest_blockhash().unwrap();
         let jito = JitoBundle::new(MAX_RETRIES, JITO_TIP_AMOUNT);
         let tip_ix = jito.get_tip_ix(keypair.pubkey(), None).await.unwrap();
 
         let mut instructions: Vec<Instruction> = Vec::new();
-        instructions.extend(sell_ixs);
+        instructions.extend(swap_ixs);
         instructions.push(tip_ix);
 
         let mut transaction = Transaction::new_signed_with_payer(
