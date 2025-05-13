@@ -19,9 +19,14 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
     let tokens_for_amount = bonding_curve.get_buy_price(amount).unwrap();
     println!("Tokens to receive: {:?}", tokens_for_amount + dev);
 
+    bonding_curve = BondingCurveAccount::default(); 
+    bonding_curve.get_buy_price(dev_buy).unwrap(); 
+
+
     const TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000;
     let max_tokens_per_wallet: u64 = (TOTAL_SUPPLY as f64 * percent) as u64;
 
+    println!("Max token per wallet: {:?}", max_tokens_per_wallet); 
     // Calculate how many wallets needed based on token amount
     let number_of_wallets = (tokens_for_amount as f64 / max_tokens_per_wallet as f64).ceil() as u64;
     println!("Number of wallets needed: {:?}", number_of_wallets);
@@ -51,7 +56,8 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
             let base_amount = remaining_sol / (number_of_wallets - i);
 
             // Add random deviation between -5% to +5%
-            let deviation = (base_amount as f64 * (rng.gen_range(-10.0..10.0) / 100.0)) as u64;
+            let mut deviation = (base_amount as f64 * (rng.gen_range(-5.0..5.0) / 100.0)) as u64;
+            deviation = deviation * i; 
             let split_amount = base_amount.saturating_add(deviation);
 
             // Ensure we don't exceed remaining amount and leave enough for other wallets
@@ -61,17 +67,9 @@ pub fn get_splits(dev_buy: u64, amount: u64, percent: f64) -> Vec<u64> {
 
             // Verify the tokens this split would receive doesn't exceed max per wallet
             let tokens_for_split = bonding_curve.get_buy_price(split_amount).unwrap();
-            if tokens_for_split > max_tokens_per_wallet {
-                // If it would exceed, reduce the split amount
-                let reduced_split = split_amount / 2; // Simple reduction, could be more sophisticated
-                splits.push(reduced_split);
-                total_allocated += reduced_split;
-                remaining_sol = remaining_sol.saturating_sub(reduced_split);
-            } else {
-                splits.push(split_amount);
-                total_allocated += split_amount;
-                remaining_sol = remaining_sol.saturating_sub(split_amount);
-            }
+            splits.push(split_amount);
+            total_allocated += split_amount;
+            remaining_sol = remaining_sol.saturating_sub(split_amount);
         }
     }
 
@@ -98,7 +96,7 @@ pub const CREATOR_VAULT_AUTHORITY_SEEDS: &[u8] =
 
 pub const PUMPFUN_CREATOR_VAULT_SEEDS: &[u8] =
     &[99, 114, 101, 97, 116, 111, 114, 45, 118, 97, 117, 108, 116];
-    
+
 pub const COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];
 
 pub async fn get_token_creator(client: &RpcClient, mint: &Pubkey) -> Option<Pubkey> {
@@ -128,19 +126,33 @@ pub async fn get_token_creator(client: &RpcClient, mint: &Pubkey) -> Option<Pubk
     None
 }
 
+
 #[cfg(test)]
 mod tests {
+    use crate::pumpfun::bonding_curve;
+
     use super::*;
 
     #[test]
     fn test_large_amount_multiple_splits() {
         let dev_buy = 1_000_000_000;
-        let amount = 9_500_000_000; // Large amount that should result in multiple wallets
-        let splits = get_splits(dev_buy, amount, 0.030);
-
+        let amount = 40000000000; // Large amount that should result in multiple wallets
+        let mut splits: Vec<u64> = get_splits(dev_buy, amount, 0.025);
+        splits.sort(); 
         let total = splits.iter().sum::<u64>();
         println!("Splits: {:?}", splits);
         println!("Total: {:?}", total);
+
+        let mut bonding_curve = BondingCurveAccount::default();
+
+        let dev_buy = bonding_curve.get_buy_price(dev_buy).unwrap(); 
+        let mut sum: u64 = dev_buy; 
+        for value in splits {
+            let split = bonding_curve.get_buy_price(value).unwrap(); 
+            sum = sum + split; 
+            println!("Getting {:?} tokens for {:?} sol", split, value); 
+        }; 
+        println!("TOTAL SUM TOKENS: {:?}", sum); 
         assert_eq!(total, amount);
     }
 }

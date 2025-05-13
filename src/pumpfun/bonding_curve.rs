@@ -127,6 +127,83 @@ impl BondingCurveAccount {
         let tokens_out_decimals = tokens_out * 1_000_000;
         Ok(tokens_out_decimals)
     }
+
+
+    /// Given a desired token amount (expressed with 6‑decimals,
+    /// i.e. the value that `get_buy_price` returns), compute how much
+    /// SOL (lamports) must be supplied to the curve.
+    ///
+    /// *Returns* the lamports required **after** updating the virtual
+    /// reserves, or an error if the curve is complete or the request
+    /// cannot be satisfied.
+    pub fn get_sol_for_tokens(
+        &mut self,
+        token_amount_decimals: u64,
+    ) -> Result<u64, &'static str> {
+        if self.complete {
+            return Err("Curve is complete");
+        }
+        if token_amount_decimals == 0 {
+            return Ok(0);
+        }
+
+        // Convert the 6‑decimal input back to whole “base‑unit” tokens
+        // (the same units that `virtual_token_reserves` use).
+        let desired_tokens: u64 = token_amount_decimals
+            .checked_div(1_000_000)
+            .ok_or("Decimal conversion under‑flow")?;
+
+        if desired_tokens == 0 {
+            return Err("Requested amount is below 1 token base‑unit");
+        }
+        if desired_tokens >= self.virtual_token_reserves {
+            return Err("Not enough liquidity in virtual reserves");
+        }
+
+        // Algebraic inverse of the maths in `get_buy_price`
+        //
+        //   n = V_s * V_t
+        //   r = V_t - desired_tokens          (resulting virtual‑token reserves)
+        //   n / (V_s + ΔS) + 1  = r
+        //   ΔS = V_s * V_t / (r - 1)  - V_s
+        //
+        // where V_s = self.virtual_sol_reserves
+        //       V_t = self.virtual_token_reserves
+
+        let v_s: u128 = self.virtual_sol_reserves as u128;
+        let v_t: u128 = self.virtual_token_reserves as u128;
+        let r: u128   = v_t - (desired_tokens as u128); // ≥ 1 guaranteed above
+
+        // Guard against r == 1 (would divide by zero ⇒ requester asked for
+        // practically the entire supply).
+        if r <= 1 {
+            return Err("Requested amount exhausts the pool");
+        }
+
+        let numerator: u128   = v_s * v_t;
+        let denominator: u128 = r - 1;
+        let sol_needed: u128  = numerator
+            .checked_div(denominator)
+            .ok_or("Math error: division by zero")?
+            .saturating_sub(v_s);
+
+        let sol_needed_u64: u64 = sol_needed
+            .try_into()
+            .map_err(|_| "Required SOL exceeds u64")?;
+
+        // Mutate reserves just like `get_buy_price`
+        self.virtual_sol_reserves = self
+            .virtual_sol_reserves
+            .checked_add(sol_needed_u64)
+            .ok_or("SOL reserve overflow")?;
+
+        self.virtual_token_reserves = self
+            .virtual_token_reserves
+            .checked_sub(desired_tokens)
+            .ok_or("Token reserve under‑flow")?;
+
+        Ok(sol_needed_u64)
+    }
 }
 
 #[cfg(test)]
