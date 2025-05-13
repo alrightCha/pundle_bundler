@@ -4,7 +4,7 @@ use solana_sdk::pubkey::Pubkey;
 
 const HOUSE: &str = "DitHyRMQiSDhn5cnKMJV2CDDt6sVct96YrECiM49pump"; //1
 const GORK: &str = "38PgzpJYu2HkiYvV8qePFakB8tuobPdGm2FFEn7Dpump"; //2
-const TROLL: &str = "5UUH9RTDiSpq6HKS6bp4NdU9PNJpXRXuiw6ShBTBhgH2"; //3
+const WEED: &str = "21nnfR4TkbZNLwvRrqEseAbz7P3kxKjaV7KuboLJpump"; //3
 const RFC: &str = "C3DwDjT17gDvvCYC2nsdGHxDHVmQRdhKfpAdqQ29pump"; //4
 const DARK: &str = "8BtoThi2ZoXnF7QQK1Wjmh2JuBw9FjVvhnGMVZ2vpump"; //5
 const TRENCHER: &str = "8ncucXv6U6epZKHPbgaEBcEK399TpHGKCquSt4RnmX4f"; //6
@@ -40,7 +40,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let deepcore: Pubkey = Pubkey::from_str(DEEPCORE).unwrap();
     let house: Pubkey = Pubkey::from_str(HOUSE).unwrap();
     let grok: Pubkey = Pubkey::from_str(GORK).unwrap();
-    let troll: Pubkey = Pubkey::from_str(TROLL).unwrap();
+    let weed: Pubkey = Pubkey::from_str(WEED).unwrap();
     let rfc: Pubkey = Pubkey::from_str(RFC).unwrap();
     let dark: Pubkey = Pubkey::from_str(DARK).unwrap();
     let trencher: Pubkey = Pubkey::from_str(TRENCHER).unwrap();
@@ -72,7 +72,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
-        deepcore, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, cycle, wagmi, pumpswap,
+        deepcore, house, grok, weed, rfc, dark, trencher, neet, ghibli, moonpig, cycle, wagmi, pumpswap,
         fog, hotmom, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, eigen, cino,
         codac, wizard, sugar, lemon, figure, deli, wale, cfx,
     ]
