@@ -12,8 +12,8 @@ const NEET: &str = "Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump"; //7
 const GHIBLI: &str = "4TBi66vi32S7J8X1A6eWfaLHYmUXu7CStcEmsJQdpump"; //8
 const MOONPIG: &str = "Ai3eKAWjzKMV8wRwd41nVP83yqfbAVJykhvJVPxspump"; //9
 const CYCLE: &str = "HJ2n2a3YK1LTBCRbS932cTtmXw4puhgG8Jb2WcpEpump"; //10
-const USDC: &str = "BQQzEvYT4knThhkSPBvSKBLg1LEczisWLhx5ydJipump"; //11
-const CBBTC: &str = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij"; //12
+const DEEPCORE: &str = "3qVpCnqdaJtARzE2dYuCy5pm8X2NgF5hx9q9GosPpump"; //11
+const WAGMI: &str = "GnM6XZ7DN9KSPW2ZVMNqCggsxjnxHMGb2t4kiWrUpump"; //12
 const UFD: &str = "TTTpMsuQ1ic6zQrmf3mKqjcZzyHb4ugdNRq9vyvpump"; //13
 const FOG: &str = "6bdTRHhdZenJQYLTxaYc8kH74GBNP9DoGhPnCjfypump"; //13.5
 const HOTMOM: &str = "H4SFaUnxrZRoFnhBeotZnuqw4mfVtJ2nCvGrPmQupump"; //14
@@ -27,7 +27,7 @@ const PHARMA: &str = "HtrvP4fG9KiFqFeu4f32RuZiwG3nmYwPkPZ61nAbpump"; //21
 const ANIME: &str = "3pA668WX5vNjQMw2KdHJ8RpZceG6gEfXWtRvGChjbSnz"; //22
 const SHRIMP: &str = "BMnMaiMu5B29o3eMDena8cxwL9R4CDwotxQMG2Tspump"; //23
 const CINO: &str = "BUUB7DpQT1mcTrs55oXawgEbxm5khAozsbmyhMdRpump"; //24
-const OX: &str = "3E2z4KX7y457xJqK9RQeJhA29oPdoUvAAD3Ea3zQyuG3"; //26
+const CODAC: &str = "69LjZUUzxj3Cb3Fxeo1X4QpYEQTboApkhXTysPpbpump"; //26
 const WIZARD: &str = "8oosbx7jJrZxm5m4ThKhBpvwwG4QpoAe6i4GiG19pump"; //27
 const SUGAR: &str = "5iVmFCCwJTuuw7p4FrxYoZ1bUNdjg14j7uv5hMsMpump"; //28
 const WOKE: &str = "GT564KpGybkXFE43D8eySwNuy2zdV6hjXsiHREwSpump"; //29
@@ -37,7 +37,7 @@ const WALE: &str = "AAE7JS7EAHkQzRKn1Cmt7TP5cQR39Df8D3zxWmNjpump"; //32
 const CFX: &str = "RhFVq1Zt81VvcoSEMSyCGZZv5SwBdA8MV7w4HEMpump"; //33
 
 pub fn init_mints() -> Vec<Pubkey> {
-    let usdc: Pubkey = Pubkey::from_str(USDC).unwrap();
+    let deepcore: Pubkey = Pubkey::from_str(DEEPCORE).unwrap();
     let house: Pubkey = Pubkey::from_str(HOUSE).unwrap();
     let grok: Pubkey = Pubkey::from_str(GORK).unwrap();
     let troll: Pubkey = Pubkey::from_str(TROLL).unwrap();
@@ -48,7 +48,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let ghibli: Pubkey = Pubkey::from_str(GHIBLI).unwrap();
     let moonpig: Pubkey = Pubkey::from_str(MOONPIG).unwrap();
     let cycle: Pubkey = Pubkey::from_str(CYCLE).unwrap();
-    let cbbtc: Pubkey = Pubkey::from_str(CBBTC).unwrap();
+    let wagmi: Pubkey = Pubkey::from_str(WAGMI).unwrap();
     let ufd: Pubkey = Pubkey::from_str(UFD).unwrap();
     let fog: Pubkey = Pubkey::from_str(FOG).unwrap();
     let hotmom: Pubkey = Pubkey::from_str(HOTMOM).unwrap();
@@ -62,7 +62,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let anime: Pubkey = Pubkey::from_str(ANIME).unwrap();
     let shrimp: Pubkey = Pubkey::from_str(SHRIMP).unwrap();
     let cino: Pubkey = Pubkey::from_str(CINO).unwrap();
-    let ox: Pubkey = Pubkey::from_str(OX).unwrap();
+    let codac: Pubkey = Pubkey::from_str(CODAC).unwrap();
     let wizard: Pubkey = Pubkey::from_str(WIZARD).unwrap();
     let sugar: Pubkey = Pubkey::from_str(SUGAR).unwrap();
     let woke: Pubkey = Pubkey::from_str(WOKE).unwrap();
@@ -72,8 +72,8 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
-        usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, cycle, cbbtc, ufd,
+        deepcore, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, cycle, wagmi, ufd,
         fog, hotmom, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino,
-        ox, wizard, sugar, woke, fritz, deli, wale, cfx,
+        codac, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]
 }
