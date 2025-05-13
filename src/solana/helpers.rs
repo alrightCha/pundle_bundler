@@ -66,6 +66,12 @@ pub async fn sell_all_txs(
 
     //BUILD INSTRUCTIONS
 
+    let token_bonded = pumpfun_client
+        .get_pool_information(mint_pubkey)
+        .await
+        .unwrap()
+        .is_bonding_curve_complete;
+
     let mut ixs: Vec<Instruction> = Vec::new();
 
     let mut all_signers: Vec<Keypair> = Vec::new();
@@ -74,17 +80,31 @@ pub async fn sell_all_txs(
     for keypair in all_keypairs.iter() {
         all_signers.push(keypair.insecure_clone());
 
-        let swap_engine = PumpSwap::new();
-        let sell_ixs = swap_engine
-            .sell_ixs(
-                *mint_pubkey,
-                keypair.pubkey(),
-                None,
-                Some(keypair.insecure_clone()),
-            )
-            .await;
+        let new_ixs: Option<Vec<Instruction>> = match token_bonded {
+            true => {
+                let swap_engine = PumpSwap::new();
+                let sell_ixs = swap_engine
+                    .sell_ixs(*mint_pubkey, keypair.pubkey(), None, Some(keypair.insecure_clone()))
+                    .await;
+                Some(sell_ixs)
+            }
+            false => {
+                let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;
+                match pump_ixs {
+                    Ok(ixs) => Some(ixs),
+                    Err(_) => None,
+                }
+            }
+        };
 
-        ixs.extend(sell_ixs);
+        if let Some(new_ixs) = new_ixs {
+            println!(
+                "Passing sell ixs {:?} for {:?}",
+                new_ixs.len(),
+                keypair.pubkey().to_string()
+            );
+            ixs.extend(new_ixs);
+        }
     }
 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
@@ -237,13 +257,23 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
 
     let mint_pubkey = Pubkey::from_str(&mint).unwrap();
 
+    let pool_info = pumpfun_client
+        .get_pool_information(&mint_pubkey)
+        .await
+        .unwrap();
+
     let mut amount_sol: u64 = 0;
 
-    let amount = sol_for_tokens(mint_pubkey, amount).await;
-    match amount {
-        Ok(amount_recv) => amount_sol = amount_recv,
-        Err(_) => println!("Token account balance not found"),
+    if pool_info.is_bonding_curve_complete {
+        let amount = sol_for_tokens(mint_pubkey, amount).await;
+        match amount {
+            Ok(amount_recv) => amount_sol = amount_recv,
+            Err(_) => println!("Token account balance not found"),
+        }
+    } else {
+        let price = pool_info.sell_price;
+        let sol_amount = (price * amount) / 100_000; //Returns amount in lamports 100_000 because sell_price is per 100 000 tokens
+        amount_sol = sol_amount;
     }
-
     amount_sol
 }
