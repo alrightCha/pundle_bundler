@@ -1,4 +1,5 @@
 use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
+use crate::pumpfun::utils::{get_token_creator, CREATOR_VAULT_AUTHORITY_SEEDS};
 
 use super::global::GlobalAccount;
 use crate::config::RPC_URL;
@@ -6,7 +7,7 @@ use crate::params::PoolInformation;
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
 use anchor_client::anchor_lang::InstructionData;
 use anchor_client::{
-    solana_client::nonblocking::rpc_client::RpcClient,
+    solana_client::rpc_client::RpcClient,
     solana_sdk::{
         instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
@@ -39,7 +40,6 @@ pub struct PumpFun {
     pub rpc: RpcClient,
     /// Keypair used to sign transactions
     pub payer: Arc<Keypair>,
-
     pub bonding_curve: BondingCurveAccount,
 }
 
@@ -139,6 +139,7 @@ impl PumpFun {
     pub async fn buy_ixs(
         &mut self,
         mint: &Pubkey,
+        creator: Pubkey, 
         keypair: &Keypair,
         amount_sol: u64,
         slippage_basis_points: Option<u64>,
@@ -169,7 +170,7 @@ impl PumpFun {
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
         println!("PUBKEY: {:?} ATA: {:?}", keypair.pubkey().to_string(), ata);
 
-        if self.rpc.get_account(&ata).await.is_err() {
+        if self.rpc.get_account(&ata).is_err() {
             let create_ata_ix = create_associated_token_account(
                 &keypair.pubkey(),
                 &keypair.pubkey(),
@@ -180,6 +181,8 @@ impl PumpFun {
         }
 
         let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
+
+        let creator_vault = self.get_creator_vault_pda(&creator);
 
         let args = Buy {
             _amount: buy_amount,
@@ -198,7 +201,7 @@ impl PumpFun {
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
-                AccountMeta::new_readonly(pumpfun::constants::accounts::RENT, false),
+                AccountMeta::new(creator_vault, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
             ],
@@ -269,7 +272,7 @@ impl PumpFun {
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate sell amounts
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), mint);
-        let balance = self.rpc.get_token_account_balance(&ata).await?;
+        let balance = self.rpc.get_token_account_balance(&ata)?;
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
         println!("Balance: {:?}", balance_u64);
         println!("Amount token: {:?}", amount_token);
@@ -302,6 +305,9 @@ impl PumpFun {
 
         let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
 
+        let creator = get_token_creator(&self.rpc, mint).await.unwrap();
+        let creator_vault = self.get_creator_vault_pda(&creator);
+
         let args = Sell {
             _amount: amount,
             _min_sol_output: min_sol_output,
@@ -319,10 +325,7 @@ impl PumpFun {
                 AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
-                AccountMeta::new_readonly(
-                    pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM,
-                    false,
-                ),
+                AccountMeta::new(creator_vault, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
@@ -350,7 +353,7 @@ impl PumpFun {
         keypair: &Keypair,
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         let ata: Pubkey = get_associated_token_address(&keypair.pubkey(), &mint);
-        let balance = self.rpc.get_token_account_balance(&ata).await?;
+        let balance = self.rpc.get_token_account_balance(&ata)?;
         let balance_u64: u64 = balance.amount.parse::<u64>().unwrap();
 
         if balance_u64 < 1000 {
@@ -446,7 +449,6 @@ impl PumpFun {
         let account = self
             .rpc
             .get_account(&global)
-            .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
         solana_sdk::borsh1::try_from_slice_unchecked::<GlobalAccount>(&account.data)
@@ -500,7 +502,6 @@ impl PumpFun {
         let account = self
             .rpc
             .get_account(&bonding_curve_pda)
-            .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
         solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::BondingCurveAccount>(
@@ -530,6 +531,14 @@ impl PumpFun {
             reserve_token,
         };
         Ok(pool_information)
+    }
+
+    fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
+        let seeds: &[&[u8]; 2] = &[CREATOR_VAULT_AUTHORITY_SEEDS, creator.as_ref()];
+        let program_id: &Pubkey = &pumpfun::constants::accounts::PUMPFUN;
+        let res = Pubkey::find_program_address(seeds, program_id).0;
+        println!("PDA: {:?}", res);
+        res
     }
 
     fn calculate_with_slippage(amount: u64, basis_points: u64) -> u64 {

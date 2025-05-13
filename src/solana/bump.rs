@@ -64,7 +64,7 @@ impl Bump {
         self.main_bump.pubkey()
     }
 
-    pub async fn bump(&mut self) {
+    pub async fn bump(&mut self, dev: Pubkey) {
         print!("Bump Wallet: {:?}", self.main_bump.secret());
         loop {
             //Make buy
@@ -82,7 +82,7 @@ impl Bump {
             let new_bumps: Vec<OneBump> = self.get_splits(&new_wallets);
 
             let fund_bumps_ixs: Vec<Instruction> = self.get_fund_ixs(&new_bumps);
-            let buy_ixs: Vec<Instruction> = self.get_buy_ixs(&new_bumps).await;
+            let buy_ixs: Vec<Instruction> = self.get_buy_ixs(&new_bumps, dev).await;
 
             all_bump_ixs.extend(fund_bumps_ixs);
             all_bump_ixs.extend(buy_ixs);
@@ -112,12 +112,12 @@ impl Bump {
         }
     }
 
-    async fn get_buy_ixs(&mut self, bumps: &Vec<OneBump>) -> Vec<Instruction> {
+    async fn get_buy_ixs(&mut self, bumps: &Vec<OneBump>, dev: Pubkey) -> Vec<Instruction> {
         let mut ixs: Vec<Instruction> = Vec::new();
         for wallet in bumps.iter() {
             let buy_ixs = self
                 .pump_cli
-                .buy_ixs(&self.mint, &wallet.keypair, wallet.lamports, None, false)
+                .buy_ixs(&self.mint, dev, &wallet.keypair, wallet.lamports, None, false)
                 .await
                 .unwrap();
             ixs.extend(buy_ixs);

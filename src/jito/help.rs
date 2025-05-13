@@ -132,6 +132,7 @@ impl BundleTransactions {
             .pumpfun_client
             .buy_ixs(
                 &self.mint_keypair.pubkey(),
+                self.dev_keypair.pubkey(),
                 &self.dev_keypair,
                 final_dev_buy_amount,
                 None,
@@ -173,7 +174,14 @@ impl BundleTransactions {
 
             let buy_ixs = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &buyer.keypair, buy_with, None, true)
+                .buy_ixs(
+                    &mint_pubkey,
+                    self.dev_keypair.pubkey(),
+                    &buyer.keypair,
+                    buy_with,
+                    None,
+                    true,
+                )
                 .await
                 .unwrap();
 
@@ -228,7 +236,14 @@ impl BundleTransactions {
             let buy_amount = balance - 10000000;
             let buy_ixs: Vec<Instruction> = self
                 .pumpfun_client
-                .buy_ixs(&mint_pubkey, &keypair.keypair, buy_amount, Some(800), true)
+                .buy_ixs(
+                    &mint_pubkey,
+                    self.dev_keypair.pubkey(),
+                    &keypair.keypair,
+                    buy_amount,
+                    Some(800),
+                    true,
+                )
                 .await
                 .unwrap();
 

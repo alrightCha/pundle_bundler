@@ -393,7 +393,7 @@ pub async fn bump_token(Json(payload): Json<BumpRequest>) -> Json<BumpResponse> 
 
     tokio::spawn(async move {
         bump.send_tx(vec![fund_ix], vec![&clone_admin]).await;
-        let _ = bump.bump();
+        let _ = bump.bump(clone_admin.pubkey());
     });
 
     Json(BumpResponse { success: true })
