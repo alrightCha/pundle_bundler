@@ -1,8 +1,9 @@
 use crate::jupiter::swap::pumpswap_pool_id;
-use crate::pumpfun::utils::{PUMP_AMM_PROGRAM, PUMP_GLOBAL};
+use crate::pumpfun::utils::{get_token_creator, PUMP_AMM_PROGRAM, PUMP_GLOBAL};
 use crate::solana::utils::get_ata_balance;
 use crate::{config::RPC_URL, solana::utils::get_admin_keypair};
 use anchor_client::anchor_lang::InstructionData;
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
@@ -24,7 +25,8 @@ use solana_sdk::{
 };
 
 use super::utils::{
-    ASSOCIATED_TOKEN_PROGRAM, PUMPFUN_EVENT_AUTH, PUMPFUN_FEE_ACC, SYSTEM_PROGRAM, TOKEN_PROGRAM,
+    ASSOCIATED_TOKEN_PROGRAM, CREATOR_VAULT_AUTHORITY_SEEDS, PUMPFUN_EVENT_AUTH, PUMPFUN_FEE_ACC,
+    SYSTEM_PROGRAM, TOKEN_PROGRAM,
 };
 
 struct PoolInfo {
@@ -111,6 +113,11 @@ impl PumpSwap {
                 ixs.push(create_ata_ix);
             }
 
+            let creator = get_token_creator(&self.client, &mint).await.unwrap(); 
+
+            let creator_authority = self.get_creator_vault_pda(&creator);
+            let creator_authority_ata = self.get_creator_vault_ata(&creator_authority);
+
             let buy_ix = Instruction::new_with_bytes(
                 SwapID,
                 &data.data(),
@@ -132,6 +139,8 @@ impl PumpSwap {
                     AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM, false),
                     AccountMeta::new_readonly(PUMPFUN_EVENT_AUTH, false),
                     AccountMeta::new_readonly(PUMP_AMM_PROGRAM, false),
+                    AccountMeta::new(creator_authority, false),
+                    AccountMeta::new(creator_authority_ata, false),
                 ],
             );
             ixs.push(buy_ix);
@@ -188,45 +197,54 @@ impl PumpSwap {
                     _min_quote_amount_out: min_received_with_slippage,
                 };
 
-                let sell_ix = Instruction::new_with_bytes(
-                    SwapID,
-                    &sell_data.data(),
-                    vec![
-                        AccountMeta::new_readonly(swap_info.pool_id, false), // Pool id
-                        AccountMeta::new(signer.pubkey(), true),             // Signer
-                        AccountMeta::new_readonly(PUMP_GLOBAL, false),       //GLOBAL
-                        AccountMeta::new_readonly(mint, false),              //MINT
-                        AccountMeta::new_readonly(ID, false),                //WSOL
-                        AccountMeta::new(signer_ata, false),                 //MINT SIGNER ATA
-                        AccountMeta::new(ata, false),                        //WSOL RECIPIENT ATA
-                        AccountMeta::new(swap_info.pool_base, false),
-                        AccountMeta::new(swap_info.pool_quote, false),
-                        AccountMeta::new_readonly(PUMPFUN_FEE_ACC, false),
-                        AccountMeta::new(swap_info.fee_recipient_ata, false),
-                        AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-                        AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-                        AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
-                        AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM, false),
-                        AccountMeta::new_readonly(PUMPFUN_EVENT_AUTH, false),
-                        AccountMeta::new_readonly(PUMP_AMM_PROGRAM, false),
-                    ],
-                );
-                ixs.push(sell_ix);
-            }
+                
+            let creator = get_token_creator(&self.client, &mint).await.unwrap(); 
 
-            //Add sell tax instruction if seller pubkey has been registered 
-            let tax_amount = swap_info.amount_out * 5 / 100;
+            let creator_authority = self.get_creator_vault_pda(&creator);
 
-            if seller_pubkey != Pubkey::default() {
-                let tax_ix = system_instruction::transfer(
-                    &seller_pubkey,
-                    &self.admin.pubkey(), // Send to admin public key
-                    tax_amount,
-                );
-    
-                ixs.push(tax_ix);
-            }
+            let creator_authority_ata = self.get_creator_vault_ata(&creator_authority);
+
+            let sell_ix = Instruction::new_with_bytes(
+                SwapID,
+                &sell_data.data(),
+                vec![
+                    AccountMeta::new_readonly(swap_info.pool_id, false), // Pool id
+                    AccountMeta::new(signer.pubkey(), true),             // Signer
+                    AccountMeta::new_readonly(PUMP_GLOBAL, false),       //GLOBAL
+                    AccountMeta::new_readonly(mint, false),              //MINT
+                    AccountMeta::new_readonly(ID, false),                //WSOL
+                    AccountMeta::new(signer_ata, false),                 //MINT SIGNER ATA
+                    AccountMeta::new(ata, false),                        //WSOL RECIPIENT ATA
+                    AccountMeta::new(swap_info.pool_base, false),
+                    AccountMeta::new(swap_info.pool_quote, false),
+                    AccountMeta::new_readonly(PUMPFUN_FEE_ACC, false),
+                    AccountMeta::new(swap_info.fee_recipient_ata, false),
+                    AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+                    AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+                    AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+                    AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM, false),
+                    AccountMeta::new_readonly(PUMPFUN_EVENT_AUTH, false),
+                    AccountMeta::new_readonly(PUMP_AMM_PROGRAM, false),
+                    AccountMeta::new(creator_authority, false),
+                    AccountMeta::new(creator_authority_ata, false),
+                ],
+            );
+            ixs.push(sell_ix);
         }
+
+        //Add sell tax instruction if seller pubkey has been registered
+        let tax_amount = swap_info.amount_out * 5 / 100;
+
+        if seller_pubkey != Pubkey::default() {
+            let tax_ix = system_instruction::transfer(
+                &seller_pubkey,
+                &self.admin.pubkey(), // Send to admin public key
+                tax_amount,
+            );
+
+            ixs.push(tax_ix);
+        }
+    }
 
         ixs
     }
@@ -256,5 +274,22 @@ impl PumpSwap {
         }
 
         None
+    }
+
+    fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
+        let seeds: &[&[u8]; 2] = &[CREATOR_VAULT_AUTHORITY_SEEDS, creator.as_ref()];
+        let program_id: &Pubkey = &PUMP_AMM_PROGRAM;
+        Pubkey::find_program_address(seeds, program_id).0
+    }
+
+    fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
+        let quote_mint = &ID;
+        let program_id = self.client.get_account(quote_mint).unwrap().owner;
+        let ata = get_associated_token_address_with_program_id(
+            creator_vault_pda,
+            quote_mint,
+            &program_id,
+        );
+        ata
     }
 }

@@ -1,4 +1,9 @@
 use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
+
+use super::global::GlobalAccount;
+use crate::config::RPC_URL;
+use crate::params::PoolInformation;
+use crate::pumpfun::bonding_curve::BondingCurveAccount;
 use anchor_client::anchor_lang::InstructionData;
 use anchor_client::{
     solana_client::nonblocking::rpc_client::RpcClient,
@@ -15,9 +20,6 @@ use anchor_spl::associated_token::{
     spl_associated_token_account::instruction::create_associated_token_account,
 };
 use pumpfun_cpi::instruction::{Buy, Create, Sell};
-use crate::config::RPC_URL;
-use crate::params::PoolInformation;
-use crate::pumpfun::bonding_curve::BondingCurveAccount;
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use std::{str::FromStr, sync::Arc};
@@ -144,10 +146,10 @@ impl PumpFun {
     ) -> Result<Vec<Instruction>, pumpfun::error::ClientError> {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await.unwrap();
-        println!("Amount sol: {}", amount_sol); 
+        println!("Amount sol: {}", amount_sol);
         let buy_amount_with_slippage =
             Self::calculate_with_slippage(amount_sol, slippage_basis_points.unwrap_or(500));
-        println!("Buy amount with slippage: {:?}", buy_amount_with_slippage); 
+        println!("Buy amount with slippage: {:?}", buy_amount_with_slippage);
         let buy_amount = match with_stimulate {
             true => self
                 .bonding_curve
@@ -438,9 +440,7 @@ impl PumpFun {
     /// # Returns
     ///
     /// Returns the deserialized GlobalAccount if successful, or a ClientError if the operation fails
-    pub async fn get_global_account(
-        &self,
-    ) -> Result<pumpfun::accounts::GlobalAccount, pumpfun::error::ClientError> {
+    pub async fn get_global_account(&self) -> Result<GlobalAccount, pumpfun::error::ClientError> {
         let global: Pubkey = self.get_global_pda();
 
         let account = self
@@ -449,10 +449,8 @@ impl PumpFun {
             .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
-        solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::GlobalAccount>(
-            &account.data,
-        )
-        .map_err(pumpfun::error::ClientError::BorshError)
+        solana_sdk::borsh1::try_from_slice_unchecked::<GlobalAccount>(&account.data)
+            .map_err(pumpfun::error::ClientError::BorshError)
     }
 
     /// Gets the Program Derived Address (PDA) for the global state account
@@ -505,8 +503,10 @@ impl PumpFun {
             .await
             .map_err(pumpfun::error::ClientError::SolanaClientError)?;
 
-        solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::BondingCurveAccount>(&account.data)
-            .map_err(pumpfun::error::ClientError::BorshError)
+        solana_sdk::borsh1::try_from_slice_unchecked::<pumpfun::accounts::BondingCurveAccount>(
+            &account.data,
+        )
+        .map_err(pumpfun::error::ClientError::BorshError)
     }
 
     pub async fn get_pool_information(

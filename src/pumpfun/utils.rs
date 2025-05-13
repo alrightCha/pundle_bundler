@@ -1,4 +1,9 @@
+use std::str::FromStr;
+
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
+use anchor_client::anchor_lang::AnchorDeserialize;
+use mpl_token_metadata::{accounts::Metadata, programs::MPL_TOKEN_METADATA_ID as ID};
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey;
 use solana_sdk::pubkey::Pubkey;
 
@@ -84,9 +89,39 @@ pub const PUMPFUN_FEE_ACC: Pubkey = pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuN
 pub const SYSTEM_PROGRAM: Pubkey = pubkey!("11111111111111111111111111111111");
 pub const TOKEN_PROGRAM: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 pub const PUMPFUN_EVENT_AUTH: Pubkey = pubkey!("GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR");
-pub const ASSOCIATED_TOKEN_PROGRAM: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+pub const ASSOCIATED_TOKEN_PROGRAM: Pubkey =
+    pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 pub const PUMP_AMM_PROGRAM: Pubkey = pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
-pub const PUMP_GLOBAL: Pubkey = pubkey!("ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw"); 
+pub const PUMP_GLOBAL: Pubkey = pubkey!("ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw");
+pub const CREATOR_VAULT_AUTHORITY_SEEDS: &[u8] =
+    &[99, 114, 101, 97, 116, 111, 114, 95, 118, 97, 117, 108, 116];
+
+pub async fn get_token_creator(client: &RpcClient, mint: &Pubkey) -> Option<Pubkey> {
+    let mpl_address = ID.to_string();
+    let mpl_id = Pubkey::from_str(&mpl_address).unwrap();
+
+    // Get metadata PDA address
+    let metadata_pda =
+        Pubkey::find_program_address(&[b"metadata", ID.as_ref(), mint.as_ref()], &mpl_id).0;
+
+    // Fetch metadata account data
+    let account_data = client.get_account_data(&metadata_pda).unwrap();
+
+    // Deserialize metadata
+    let metadata = Metadata::deserialize(&mut &account_data[..]).unwrap();
+
+    // Get the first creator (typically the main creator)
+    let creators = metadata.creators;
+    if let Some(creators) = creators {
+        let creator = creators.first();
+        if let Some(creator) = creator {
+            let main_creator = creator.address.to_string();
+            let val = Pubkey::from_str(&main_creator).unwrap();
+            return Some(val);
+        }
+    }
+    None
+}
 
 #[cfg(test)]
 mod tests {
