@@ -70,6 +70,11 @@ pub struct CollectFeesRequest {
     pub dev: String,
 }
 
+#[derive(Serialize)] 
+pub struct CollectedFeesResponse {
+    pub amount: u64 
+}
+
 #[derive(Deserialize)]
 pub struct SellAllRequest {
     pub pubkey: String,

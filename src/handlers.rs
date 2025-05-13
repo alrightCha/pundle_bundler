@@ -1,8 +1,8 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
-    BumpRequest, BumpResponse, CollectFeesRequest, CompleteRequest, CompleteResponse,
-    GetPoolInformationRequest, LutInit, LutRecord, LutResponse, PoolInformation, Price,
-    PriceResponse, RecursivePayRequest, SellAllRequest, SellResponse, UniqueSellRequest,
+    BumpRequest, BumpResponse, CollectFeesRequest, CollectedFeesResponse, CompleteRequest,
+    CompleteResponse, GetPoolInformationRequest, LutInit, LutRecord, LutResponse, PoolInformation,
+    Price, PriceResponse, RecursivePayRequest, SellAllRequest, SellResponse, UniqueSellRequest,
     WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
@@ -276,6 +276,22 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
     Json(SellResponse { success: true })
 }
 
+pub async fn fees_earned(Json(payload): Json<CollectFeesRequest>) -> Json<CollectedFeesResponse> {
+    let mut amount = 0;
+    let admin = get_admin_keypair();
+    let payer = Arc::new(admin);
+    let pumpfun_client = PumpFun::new(payer);
+    let client = RpcClient::new(RPC_URL);
+    let mint = payload.mint;
+    if let Ok(mint_pubkey) = Pubkey::from_str(&mint) {
+        if let Some(dev) = get_token_creator(&client, &mint_pubkey).await {
+            if let Some(collected) = pumpfun_client.collected_fee_balance(dev).await {
+                amount = collected;
+            }
+        }
+    }
+    Json(CollectedFeesResponse { amount })
+}
 //This function sells all leftover tokens for a given mint and deployer
 pub async fn sell_all_leftover_tokens(
     pubkey_to_lut: SharedLut,
@@ -379,13 +395,18 @@ pub async fn sell_all_leftover_tokens(
         let pumpfun_client = PumpFun::new(payer);
 
         if let Some(dev) = dev {
-            let dev_keypair: Keypair =
-                load_keypair(&format!("accounts/{}/{}/{}.json", requester, mint, dev.to_string())).unwrap();
+            let dev_keypair: Keypair = load_keypair(&format!(
+                "accounts/{}/{}/{}.json",
+                requester,
+                mint,
+                dev.to_string()
+            ))
+            .unwrap();
 
             if let Some(balance) = pumpfun_client.collected_fee_balance(dev).await {
                 if balance > 0 {
-                    let payer = get_admin_keypair(); 
-                    let blockhash = client.get_latest_blockhash().unwrap(); 
+                    let payer = get_admin_keypair();
+                    let blockhash = client.get_latest_blockhash().unwrap();
                     let priority_fee_amount = 500_000; // 0.0005 SOL
                     let fee_ix =
                         ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
@@ -397,9 +418,9 @@ pub async fn sell_all_leftover_tokens(
                             &[&payer, &dev_keypair],
                             blockhash,
                         );
-        
+
                         let sig = client.send_and_confirm_transaction(&tx).unwrap();
-                        println!("Sent tx to claim with sig: {:?}", sig); 
+                        println!("Sent tx to claim with sig: {:?}", sig);
                     }
                 }
             }
