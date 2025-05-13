@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn test_large_amount_multiple_splits() {
-        let dev_buy = 1_000_000_000;
-        let amount = 40000000000; // Large amount that should result in multiple wallets
+        let dev_buy = 1_500_000_000;
+        let amount = 64000000000; // Large amount that should result in multiple wallets
         let mut splits: Vec<u64> = get_splits(dev_buy, amount, 0.025);
         splits.sort(); 
         let total = splits.iter().sum::<u64>();

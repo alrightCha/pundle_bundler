@@ -66,12 +66,6 @@ pub async fn sell_all_txs(
 
     //BUILD INSTRUCTIONS
 
-    let token_bonded = pumpfun_client
-        .get_pool_information(mint_pubkey)
-        .await
-        .unwrap()
-        .is_bonding_curve_complete;
-
     let mut ixs: Vec<Instruction> = Vec::new();
 
     let mut all_signers: Vec<Keypair> = Vec::new();
@@ -80,31 +74,17 @@ pub async fn sell_all_txs(
     for keypair in all_keypairs.iter() {
         all_signers.push(keypair.insecure_clone());
 
-        let new_ixs: Option<Vec<Instruction>> = match token_bonded {
-            true => {
-                let swap_engine = PumpSwap::new();
-                let sell_ixs = swap_engine
-                    .sell_ixs(*mint_pubkey, keypair.pubkey(), None, Some(keypair.insecure_clone()))
-                    .await;
-                Some(sell_ixs)
-            }
-            false => {
-                let pump_ixs = pumpfun_client.sell_all_ix(&mint_pubkey, &keypair).await;
-                match pump_ixs {
-                    Ok(ixs) => Some(ixs),
-                    Err(_) => None,
-                }
-            }
-        };
+        let swap_engine = PumpSwap::new();
+        let sell_ixs = swap_engine
+            .sell_ixs(
+                *mint_pubkey,
+                keypair.pubkey(),
+                None,
+                Some(keypair.insecure_clone()),
+            )
+            .await;
 
-        if let Some(new_ixs) = new_ixs {
-            println!(
-                "Passing sell ixs {:?} for {:?}",
-                new_ixs.len(),
-                keypair.pubkey().to_string()
-            );
-            ixs.extend(new_ixs);
-        }
+        ixs.extend(sell_ixs);
     }
 
     let mut transactions: Vec<VersionedTransaction> = Vec::new();
