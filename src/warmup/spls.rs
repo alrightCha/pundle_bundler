@@ -16,7 +16,7 @@ const USDC: &str = "BQQzEvYT4knThhkSPBvSKBLg1LEczisWLhx5ydJipump"; //11
 const CBBTC: &str = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij"; //12
 const UFD: &str = "TTTpMsuQ1ic6zQrmf3mKqjcZzyHb4ugdNRq9vyvpump"; //13
 const FOG: &str = "6bdTRHhdZenJQYLTxaYc8kH74GBNP9DoGhPnCjfypump"; //13.5
-const RETARDIO: &str = "6ogzHhzdrQr9Pgv6hZ2MNze7UrzBMAFyBBWUYp1Fhitx"; //14
+const HOTMOM: &str = "H4SFaUnxrZRoFnhBeotZnuqw4mfVtJ2nCvGrPmQupump"; //14
 const VITAFIN: &str = "83mCRQJzvKMeQd9wJbZDUCTPgRbZMDoPdMSx5Sf1pump"; //15
 const URMOM: &str = "9j6twpYWrV1ueJok76D9YK8wJTVoG9Zy8spC7wnTpump"; //16
 const CHILLHOUSE: &str = "GkyPYa7NnCFbduLknCfBfP7p8564X1VZhwZYJ6CZpump"; //17
@@ -51,7 +51,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cbbtc: Pubkey = Pubkey::from_str(CBBTC).unwrap();
     let ufd: Pubkey = Pubkey::from_str(UFD).unwrap();
     let fog: Pubkey = Pubkey::from_str(FOG).unwrap();
-    let retardio: Pubkey = Pubkey::from_str(RETARDIO).unwrap();
+    let hotmom: Pubkey = Pubkey::from_str(HOTMOM).unwrap();
     let vitafin: Pubkey = Pubkey::from_str(VITAFIN).unwrap();
     let urmom: Pubkey = Pubkey::from_str(URMOM).unwrap();
     let chill: Pubkey = Pubkey::from_str(CHILLHOUSE).unwrap();
@@ -73,7 +73,7 @@ pub fn init_mints() -> Vec<Pubkey> {
 
     vec![
         usdc, house, grok, troll, rfc, dark, trencher, neet, ghibli, moonpig, cycle, cbbtc, ufd,
-        fog, retardio, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino,
+        fog, hotmom, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, shrimp, cino,
         ox, wizard, sugar, woke, fritz, deli, wale, cfx,
     ]
 }
