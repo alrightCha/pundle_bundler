@@ -7,16 +7,16 @@ use solana_sdk::signature::Keypair;
 #[serde(rename_all = "camelCase")]
 pub struct PostBundleRequest {
     pub requester_pubkey: String,
-    pub vanity: String, 
+    pub vanity: String,
     pub name: String,
     pub symbol: String,
     pub uri: String,
     pub dev_buy_amount: u64,
     pub wallets_buy_amount: u64,
-    pub with_delay: bool, 
-    pub split_percent: f64, 
-    pub fee: u64, 
-    pub jito_tip: u64
+    pub with_delay: bool,
+    pub split_percent: f64,
+    pub fee: u64,
+    pub jito_tip: u64,
 }
 
 #[derive(Serialize)]
@@ -61,6 +61,13 @@ pub struct UniqueSellRequest {
     pub mint: String,
     pub wallet: String,
     pub amount: u64,
+}
+
+#[derive(Deserialize)]
+pub struct CollectFeesRequest {
+    pub requester: String, 
+    pub mint: String,
+    pub dev: String,
 }
 
 #[derive(Deserialize)]
@@ -159,7 +166,6 @@ pub struct Price {
 pub struct PriceResponse {
     pub price: u64,
 }
-
 
 #[derive(Deserialize, Debug)]
 pub struct CompleteRequest {

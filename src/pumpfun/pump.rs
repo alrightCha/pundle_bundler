@@ -1,10 +1,10 @@
-use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
-use crate::pumpfun::utils::{get_token_creator, PUMPFUN_CREATOR_VAULT_SEEDS};
-
 use super::global::GlobalAccount;
+use super::utils::COLLECT_FEE_DISCRIMINATOR;
 use crate::config::RPC_URL;
+use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
 use crate::params::PoolInformation;
 use crate::pumpfun::bonding_curve::BondingCurveAccount;
+use crate::pumpfun::utils::{get_token_creator, PUMPFUN_CREATOR_VAULT_SEEDS};
 use anchor_client::anchor_lang::InstructionData;
 use anchor_client::{
     solana_client::rpc_client::RpcClient,
@@ -21,6 +21,7 @@ use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
 };
+use anchor_spl::token::spl_token::native_mint::ID;
 use pumpfun_cpi::instruction::{Buy, Create, Sell};
 use serde::{Deserialize, Serialize};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -125,15 +126,26 @@ impl PumpFun {
         )
     }
 
+    pub async fn collected_fee_balance(&self, creator: Pubkey) -> Option<u64> {
+        let creator_fee_pda = self.get_creator_vault_pda(&creator);
+        let ata = self.get_creator_vault_ata(&creator_fee_pda);
+        let balance = self.rpc.get_token_account_balance(&ata);
+
+        if let Ok(balance) = balance {
+            let balance_u64 = balance.amount.parse::<u64>().unwrap();
+            return Some(balance_u64);
+        }
+        None
+    }
+
     pub async fn collect_fees(
-        &mut self,
+        &self,
         creator: Pubkey,
     ) -> Result<Instruction, pumpfun::error::ClientError> {
         let creator_vault = self.get_creator_vault_pda(&creator);
-
         let ix = Instruction::new_with_bytes(
             pumpfun::constants::accounts::PUMPFUN,
-            &[],
+            &COLLECT_FEE_DISCRIMINATOR,
             vec![
                 AccountMeta::new(creator, true),
                 AccountMeta::new(creator_vault, false),
@@ -400,7 +412,7 @@ impl PumpFun {
 
         let creator = get_token_creator(&self.rpc, mint).await.unwrap();
         let creator_vault = self.get_creator_vault_pda(&creator);
-        
+
         let args = Sell {
             _amount: balance_u64,
             _min_sol_output: min_sol_output,
@@ -559,6 +571,18 @@ impl PumpFun {
         let res = Pubkey::find_program_address(seeds, program_id).0;
         println!("PDA: {:?}", res);
         res
+    }
+
+    pub fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
+        let quote_mint = &ID;
+        let program_id = self.rpc.get_account(quote_mint).unwrap().owner;
+        let ata = get_associated_token_address_with_program_id(
+            creator_vault_pda,
+            quote_mint,
+            &program_id,
+        );
+        println!("ATA: {:?}", ata);
+        ata
     }
 
     fn calculate_with_slippage(amount: u64, basis_points: u64) -> u64 {

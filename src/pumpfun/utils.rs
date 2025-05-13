@@ -98,6 +98,8 @@ pub const CREATOR_VAULT_AUTHORITY_SEEDS: &[u8] =
 
 pub const PUMPFUN_CREATOR_VAULT_SEEDS: &[u8] =
     &[99, 114, 101, 97, 116, 111, 114, 45, 118, 97, 117, 108, 116];
+    
+pub const COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];
 
 pub async fn get_token_creator(client: &RpcClient, mint: &Pubkey) -> Option<Pubkey> {
     let mpl_address = ID.to_string();

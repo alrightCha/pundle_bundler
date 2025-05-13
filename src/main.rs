@@ -22,8 +22,7 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 
 use handlers::{
-    complete_bundle, get_pool_information, get_price, handle_post_bundle, health_check,
-    pay_recursive, sell_all_leftover_tokens, sell_for_keypair, setup_lut_record, withdraw_all_sol,
+    complete_bundle, get_pool_information, get_price, handle_collect_fees, handle_post_bundle, health_check, pay_recursive, sell_all_leftover_tokens, sell_for_keypair, setup_lut_record, withdraw_all_sol
 };
 
 use solana_sdk::pubkey::Pubkey;
@@ -67,6 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let lut = Arc::clone(&pubkey_to_lut);
                 async move |payload| setup_lut_record(lut, payload).await
             }),
+        )
+        .route(
+            "/collect-fees",
+            post(async move |payload| handle_collect_fees(payload).await),
         )
         .route(
             "/pool-info",

@@ -1,12 +1,13 @@
 use crate::jupiter::swap::swap_ixs;
 use crate::params::{
-    BumpRequest, BumpResponse, CompleteRequest, CompleteResponse, GetPoolInformationRequest,
-    LutInit, LutRecord, LutResponse, PoolInformation, Price, PriceResponse, RecursivePayRequest,
-    SellAllRequest, SellResponse, UniqueSellRequest, WithdrawAllSolRequest,
+    BumpRequest, BumpResponse, CollectFeesRequest, CompleteRequest, CompleteResponse,
+    GetPoolInformationRequest, LutInit, LutRecord, LutResponse, PoolInformation, Price,
+    PriceResponse, RecursivePayRequest, SellAllRequest, SellResponse, UniqueSellRequest,
+    WithdrawAllSolRequest,
 };
 use crate::pumpfun::pump::PumpFun;
 use crate::pumpfun::swap::PumpSwap;
-use crate::pumpfun::utils::get_splits;
+use crate::pumpfun::utils::{get_splits, get_token_creator};
 use crate::solana::bump::Bump;
 use crate::solana::recursive_pay::recursive_pay;
 use crate::SharedLut;
@@ -14,6 +15,7 @@ use anchor_spl::associated_token::get_associated_token_address;
 use axum::Json;
 use pumpfun_cpi::instruction::Create;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
@@ -69,10 +71,10 @@ pub async fn handle_post_bundle(
     //Step 0: Initialize variables
 
     let requester_pubkey = payload.requester_pubkey.clone();
-    let mint_keypair_str = payload.vanity; 
+    let mint_keypair_str = payload.vanity;
 
-    let mint = Keypair::from_base58_string(&mint_keypair_str); 
-    println!("Mint address: {:?}", mint.pubkey().to_string()); 
+    let mint = Keypair::from_base58_string(&mint_keypair_str);
+    println!("Mint address: {:?}", mint.pubkey().to_string());
     let dev_keypair = create_keypair(&requester_pubkey, &mint.pubkey().to_string()).unwrap();
 
     let token_metadata = Create {
@@ -137,8 +139,11 @@ pub async fn handle_post_bundle(
     let jito_fee = payload.jito_tip;
     let with_delay = payload.with_delay;
 
-    println!("Passing mint to process bundle fn: {:?}", mint.pubkey().to_string()); 
-    
+    println!(
+        "Passing mint to process bundle fn: {:?}",
+        mint.pubkey().to_string()
+    );
+
     // Spawn background processing of bundle in a separate task
     spawn(async move {
         match process_bundle(
@@ -159,7 +164,11 @@ pub async fn handle_post_bundle(
                 map.insert(mint.pubkey().to_string(), lut);
             }
             Err(e) => {
-                eprintln!("Error processing bundle for mint {}: {}", mint.pubkey().to_string(), e);
+                eprintln!(
+                    "Error processing bundle for mint {}: {}",
+                    mint.pubkey().to_string(),
+                    e
+                );
             }
         }
     });
@@ -222,8 +231,15 @@ pub async fn sell_for_keypair(Json(payload): Json<UniqueSellRequest>) -> Json<Se
 
         let sell_ixs: Vec<Instruction> = match bonded.is_bonding_curve_complete {
             true => {
-                let swap_engine = PumpSwap::new(); 
-                let swap_ixs = swap_engine.sell_ixs(mint_pubkey, keypair.pubkey(), Some(amount), Some(keypair.insecure_clone())).await; 
+                let swap_engine = PumpSwap::new();
+                let swap_ixs = swap_engine
+                    .sell_ixs(
+                        mint_pubkey,
+                        keypair.pubkey(),
+                        Some(amount),
+                        Some(keypair.insecure_clone()),
+                    )
+                    .await;
                 swap_ixs
             }
             false => {
@@ -356,7 +372,39 @@ pub async fn sell_all_leftover_tokens(
     }
 
     if with_admin_transfer {
-        let res = recursive_pay(requester, mint,  None, true).await;
+        let client = RpcClient::new(RPC_URL);
+        let dev = get_token_creator(&client, &mint_pubkey).await;
+        let admin = get_admin_keypair();
+        let payer = Arc::new(admin);
+        let pumpfun_client = PumpFun::new(payer);
+
+        if let Some(dev) = dev {
+            let dev_keypair: Keypair =
+                load_keypair(&format!("accounts/{}/{}/{}.json", requester, mint, dev.to_string())).unwrap();
+
+            if let Some(balance) = pumpfun_client.collected_fee_balance(dev).await {
+                if balance > 0 {
+                    let payer = get_admin_keypair(); 
+                    let blockhash = client.get_latest_blockhash().unwrap(); 
+                    let priority_fee_amount = 500_000; // 0.0005 SOL
+                    let fee_ix =
+                        ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+
+                    if let Ok(claim_ix) = pumpfun_client.collect_fees(dev).await {
+                        let tx = Transaction::new_signed_with_payer(
+                            &vec![fee_ix, claim_ix],
+                            Some(&payer.pubkey()),
+                            &[&payer, &dev_keypair],
+                            blockhash,
+                        );
+        
+                        let sig = client.send_and_confirm_transaction(&tx).unwrap();
+                        println!("Sent tx to claim with sig: {:?}", sig); 
+                    }
+                }
+            }
+        }
+        let res = recursive_pay(requester, mint, None, true).await;
         Json(SellResponse { success: res })
     } else {
         Json(SellResponse { success: true })
@@ -402,6 +450,57 @@ pub async fn bump_token(Json(payload): Json<BumpRequest>) -> Json<BumpResponse> 
 pub async fn get_price(Json(payload): Json<Price>) -> Json<PriceResponse> {
     let amount_sell = get_sol_amount(payload.token_amount, payload.mint).await;
     Json(PriceResponse { price: amount_sell })
+}
+
+pub async fn handle_collect_fees(Json(payload): Json<CollectFeesRequest>) -> Json<SellResponse> {
+    let requester = payload.requester;
+    let dev_pubkey = payload.dev;
+    let mint = payload.mint;
+
+    let dev_keypair: Keypair = load_keypair(&format!(
+        "accounts/{}/{}/{}.json",
+        requester, mint, dev_pubkey
+    ))
+    .unwrap();
+
+    let admin_keypair: Keypair = get_admin_keypair();
+
+    let payer: Arc<Keypair> = Arc::new(admin_keypair);
+
+    let pumpfun_client = PumpFun::new(payer);
+    let client = RpcClient::new(RPC_URL);
+    let mut success = false;
+
+    if let Some(balance) = pumpfun_client
+        .collected_fee_balance(dev_keypair.pubkey())
+        .await
+    {
+        if balance > 0 {
+            let ix = pumpfun_client.collect_fees(dev_keypair.pubkey()).await;
+            if let Ok(ix) = ix {
+                let payer = get_admin_keypair();
+                let blockhash = client.get_latest_blockhash().unwrap();
+
+                let priority_fee_amount = 500_000; // 0.0005 SOL
+                let fee_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee_amount);
+
+                let tx = Transaction::new_signed_with_payer(
+                    &vec![fee_ix, ix],
+                    Some(&payer.pubkey()),
+                    &[&payer, &dev_keypair],
+                    blockhash,
+                );
+
+                let sig = client.send_and_confirm_transaction(&tx);
+
+                if let Ok(sig) = sig {
+                    println!("Sent transaction to claim fees with signature {:?}", sig);
+                    success = true;
+                }
+            }
+        }
+    }
+    Json(SellResponse { success: success })
 }
 
 pub async fn setup_lut_record(
