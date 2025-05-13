@@ -139,8 +139,8 @@ impl PumpSwap {
                     AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM, false),
                     AccountMeta::new_readonly(PUMPFUN_EVENT_AUTH, false),
                     AccountMeta::new_readonly(PUMP_AMM_PROGRAM, false),
-                    AccountMeta::new(creator_authority, false),
                     AccountMeta::new(creator_authority_ata, false),
+                    AccountMeta::new(creator_authority, false),
                 ],
             );
             ixs.push(buy_ix);
@@ -225,8 +225,8 @@ impl PumpSwap {
                     AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM, false),
                     AccountMeta::new_readonly(PUMPFUN_EVENT_AUTH, false),
                     AccountMeta::new_readonly(PUMP_AMM_PROGRAM, false),
-                    AccountMeta::new(creator_authority, false),
                     AccountMeta::new(creator_authority_ata, false),
+                    AccountMeta::new(creator_authority, false),
                 ],
             );
             ixs.push(sell_ix);
@@ -276,13 +276,15 @@ impl PumpSwap {
         None
     }
 
-    fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
+    pub fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
         let seeds: &[&[u8]; 2] = &[CREATOR_VAULT_AUTHORITY_SEEDS, creator.as_ref()];
         let program_id: &Pubkey = &PUMP_AMM_PROGRAM;
-        Pubkey::find_program_address(seeds, program_id).0
+        let res = Pubkey::find_program_address(seeds, program_id).0; 
+        println!("PDA: {:?}", res); 
+        res
     }
 
-    fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
+    pub fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
         let quote_mint = &ID;
         let program_id = self.client.get_account(quote_mint).unwrap().owner;
         let ata = get_associated_token_address_with_program_id(
@@ -290,6 +292,7 @@ impl PumpSwap {
             quote_mint,
             &program_id,
         );
+        println!("ATA: {:?}", ata); 
         ata
     }
 }
