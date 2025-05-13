@@ -1,5 +1,5 @@
 use crate::config::{ADMIN_PUBKEY, TOKEN_AMOUNT_MULTIPLIER};
-use crate::pumpfun::utils::{get_token_creator, CREATOR_VAULT_AUTHORITY_SEEDS};
+use crate::pumpfun::utils::{get_token_creator, PUMPFUN_CREATOR_VAULT_SEEDS};
 
 use super::global::GlobalAccount;
 use crate::config::RPC_URL;
@@ -16,6 +16,7 @@ use anchor_client::{
         system_instruction::transfer,
     },
 };
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::associated_token::{
     get_associated_token_address,
     spl_associated_token_account::instruction::create_associated_token_account,
@@ -124,6 +125,25 @@ impl PumpFun {
         )
     }
 
+    pub async fn collect_fees(
+        &mut self,
+        creator: Pubkey,
+    ) -> Result<Instruction, pumpfun::error::ClientError> {
+        let creator_vault = self.get_creator_vault_pda(&creator);
+
+        let ix = Instruction::new_with_bytes(
+            pumpfun::constants::accounts::PUMPFUN,
+            &[],
+            vec![
+                AccountMeta::new(creator, true),
+                AccountMeta::new(creator_vault, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
+                AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
+            ],
+        );
+        Ok(ix)
+    }
     /// Buys tokens from a bonding curve by spending SOL
     ///
     /// # Arguments
@@ -139,7 +159,7 @@ impl PumpFun {
     pub async fn buy_ixs(
         &mut self,
         mint: &Pubkey,
-        creator: Pubkey, 
+        creator: Pubkey,
         keypair: &Keypair,
         amount_sol: u64,
         slippage_basis_points: Option<u64>,
@@ -533,8 +553,8 @@ impl PumpFun {
         Ok(pool_information)
     }
 
-    fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
-        let seeds: &[&[u8]; 2] = &[CREATOR_VAULT_AUTHORITY_SEEDS, creator.as_ref()];
+    pub fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
+        let seeds: &[&[u8]; 2] = &[PUMPFUN_CREATOR_VAULT_SEEDS, creator.as_ref()];
         let program_id: &Pubkey = &pumpfun::constants::accounts::PUMPFUN;
         let res = Pubkey::find_program_address(seeds, program_id).0;
         println!("PDA: {:?}", res);

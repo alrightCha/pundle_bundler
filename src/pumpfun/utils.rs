@@ -96,6 +96,9 @@ pub const PUMP_GLOBAL: Pubkey = pubkey!("ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVX
 pub const CREATOR_VAULT_AUTHORITY_SEEDS: &[u8] =
     &[99, 114, 101, 97, 116, 111, 114, 95, 118, 97, 117, 108, 116];
 
+pub const PUMPFUN_CREATOR_VAULT_SEEDS: &[u8] =
+    &[99, 114, 101, 97, 116, 111, 114, 45, 118, 97, 117, 108, 116];
+
 pub async fn get_token_creator(client: &RpcClient, mint: &Pubkey) -> Option<Pubkey> {
     let mpl_address = ID.to_string();
     let mpl_id = Pubkey::from_str(&mpl_address).unwrap();

@@ -276,7 +276,7 @@ impl PumpSwap {
         None
     }
 
-    fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
+    pub fn get_creator_vault_pda(&self, creator: &Pubkey) -> Pubkey {
         let seeds: &[&[u8]; 2] = &[CREATOR_VAULT_AUTHORITY_SEEDS, creator.as_ref()];
         let program_id: &Pubkey = &PUMP_AMM_PROGRAM;
         let res = Pubkey::find_program_address(seeds, program_id).0; 
@@ -284,7 +284,7 @@ impl PumpSwap {
         res
     }
 
-    fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
+    pub fn get_creator_vault_ata(&self, creator_vault_pda: &Pubkey) -> Pubkey {
         let quote_mint = &ID;
         let program_id = self.client.get_account(quote_mint).unwrap().owner;
         let ata = get_associated_token_address_with_program_id(
