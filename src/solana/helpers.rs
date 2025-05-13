@@ -237,23 +237,13 @@ pub async fn get_sol_amount(amount: u64, mint: String) -> u64 {
 
     let mint_pubkey = Pubkey::from_str(&mint).unwrap();
 
-    let pool_info = pumpfun_client
-        .get_pool_information(&mint_pubkey)
-        .await
-        .unwrap();
-
     let mut amount_sol: u64 = 0;
 
-    if pool_info.is_bonding_curve_complete {
-        let amount = sol_for_tokens(mint_pubkey, amount).await;
-        match amount {
-            Ok(amount_recv) => amount_sol = amount_recv,
-            Err(_) => println!("Token account balance not found"),
-        }
-    } else {
-        let price = pool_info.sell_price;
-        let sol_amount = (price * amount) / 100_000; //Returns amount in lamports 100_000 because sell_price is per 100 000 tokens
-        amount_sol = sol_amount;
+    let amount = sol_for_tokens(mint_pubkey, amount).await;
+    match amount {
+        Ok(amount_recv) => amount_sol = amount_recv,
+        Err(_) => println!("Token account balance not found"),
     }
+
     amount_sol
 }
