@@ -398,6 +398,9 @@ impl PumpFun {
 
         let bonding_curve: Pubkey = self.get_bonding_curve_pda(mint).unwrap();
 
+        let creator = get_token_creator(&self.rpc, mint).await.unwrap();
+        let creator_vault = self.get_creator_vault_pda(&creator);
+        
         let args = Sell {
             _amount: balance_u64,
             _min_sol_output: min_sol_output,
@@ -415,10 +418,7 @@ impl PumpFun {
                 AccountMeta::new(get_associated_token_address(&keypair.pubkey(), mint), false),
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::SYSTEM_PROGRAM, false),
-                AccountMeta::new_readonly(
-                    pumpfun::constants::accounts::ASSOCIATED_TOKEN_PROGRAM,
-                    false,
-                ),
+                AccountMeta::new(creator_vault, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::TOKEN_PROGRAM, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::EVENT_AUTHORITY, false),
                 AccountMeta::new_readonly(pumpfun::constants::accounts::PUMPFUN, false),
