@@ -6,7 +6,7 @@ const HOUSE: &str = "DitHyRMQiSDhn5cnKMJV2CDDt6sVct96YrECiM49pump"; //1
 const GORK: &str = "38PgzpJYu2HkiYvV8qePFakB8tuobPdGm2FFEn7Dpump"; //2
 const WEED: &str = "21nnfR4TkbZNLwvRrqEseAbz7P3kxKjaV7KuboLJpump"; //3
 const RFC: &str = "C3DwDjT17gDvvCYC2nsdGHxDHVmQRdhKfpAdqQ29pump"; //4
-const DARK: &str = "8BtoThi2ZoXnF7QQK1Wjmh2JuBw9FjVvhnGMVZ2vpump"; //5
+const FCK: &str = "EbFogghDYCPxg8NDzWJXyJMykNVjfLLgm1o3h7H7pump"; //5
 const TRENCHER: &str = "8ncucXv6U6epZKHPbgaEBcEK399TpHGKCquSt4RnmX4f"; //6
 const NEET: &str = "Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump"; //7
 const GHIBLI: &str = "4TBi66vi32S7J8X1A6eWfaLHYmUXu7CStcEmsJQdpump"; //8
@@ -42,7 +42,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let grok: Pubkey = Pubkey::from_str(GORK).unwrap();
     let weed: Pubkey = Pubkey::from_str(WEED).unwrap();
     let rfc: Pubkey = Pubkey::from_str(RFC).unwrap();
-    let dark: Pubkey = Pubkey::from_str(DARK).unwrap();
+    let fck: Pubkey = Pubkey::from_str(FCK).unwrap();
     let trencher: Pubkey = Pubkey::from_str(TRENCHER).unwrap();
     let neet: Pubkey = Pubkey::from_str(NEET).unwrap();
     let ghibli: Pubkey = Pubkey::from_str(GHIBLI).unwrap();
@@ -72,7 +72,7 @@ pub fn init_mints() -> Vec<Pubkey> {
     let cfx: Pubkey = Pubkey::from_str(CFX).unwrap();
 
     vec![
-        deepcore, house, grok, weed, rfc, dark, trencher, neet, ghibli, moonpig, cycle, wagmi, pumpswap,
+        deepcore, house, grok, weed, rfc, fck, trencher, neet, ghibli, moonpig, cycle, wagmi, pumpswap,
         fog, hotmom, vitafin, urmom, chill, aura, lilpuf, jobcoin, pharma, anime, eigen, cino,
         codac, wizard, sugar, lemon, figure, deli, wale, cfx,
     ]
